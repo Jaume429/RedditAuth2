@@ -1,0 +1,9 @@
+[phases.setup]
+nixPkgs = ["python3", "nodejs_20"]
+
+
+
+
+
+
+
