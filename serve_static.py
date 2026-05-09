@@ -26,11 +26,9 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/queue":
             self.return_queue()
             return
-
-             if self.path == "/api/gumroad":  # AÑADE ESTO
-            self.return_gumroad()        # AÑADE ESTO
-            return                       # AÑADE ESTO
-
+        if self.path == "/api/gumroad":
+            self.return_gumroad()
+            return
         super().do_GET()
 
     def do_POST(self):
@@ -60,7 +58,6 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
     def read_queue_items(self):
         if not QUEUE_FILE.exists():
             return []
-
         try:
             data = json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
             return data if isinstance(data, list) else []
@@ -84,7 +81,6 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if process and process.poll() is None:
             self.send_json({"ok": False, "error": "Queue job already running"}, status=409)
             return
-
         process = subprocess.Popen(
             ["node", "reddit-queue.mjs", "run"],
             cwd=str(ROOT),
@@ -93,6 +89,22 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         )
         self.server.queue_process = process
         self.send_json({"ok": True, "pid": process.pid}, status=202)
+
+    def return_gumroad(self):
+        try:
+            url = f"https://api.gumroad.com/v2/products/{GUMROAD_PRODUCT_ID}/sales?access_token={GUMROAD_TOKEN}"
+            request = Request(url, headers={"Accept": "application/json"})
+            with urlopen(request, timeout=10) as response:
+                data = json.loads(response.read())
+            sales = data.get("sales", [])
+            total_sales = len(sales)
+            total_revenue = sum(float(s.get("price", 0)) for s in sales) / 100
+            self.send_json({
+                "total_sales": total_sales,
+                "total_revenue": round(total_revenue, 2)
+            })
+        except Exception as e:
+            self.send_json({"error": str(e)}, status=500)
 
     def proxy_reddit(self):
         params = parse_qs(urlparse(self.path).query)
