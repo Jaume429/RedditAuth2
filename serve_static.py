@@ -14,6 +14,9 @@ HOST = "0.0.0.0"
 PORT = 8000
 QUEUE_FILE = ROOT / "queue.json"
 
+GUMROAD_TOKEN = "3oLvgbdcBVg-ka0klN-3LEe9f1TeNzFc5IOOlSCfYcA"
+GUMROAD_PRODUCT_ID = "dicmd"
+
 
 class NoCacheHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
@@ -23,6 +26,11 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/queue":
             self.return_queue()
             return
+
+             if self.path == "/api/gumroad":  # AÑADE ESTO
+            self.return_gumroad()        # AÑADE ESTO
+            return                       # AÑADE ESTO
+
         super().do_GET()
 
     def do_POST(self):
