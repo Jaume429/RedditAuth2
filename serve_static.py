@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 
 
 ROOT = Path(__file__).resolve().parent
-HOST = "127.0.0.1"
+HOST = "0.0.0.0"
 PORT = 8000
 QUEUE_FILE = ROOT / "queue.json"
 
