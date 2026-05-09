@@ -1,8 +1,17 @@
 {
-  "dependencies": {
-    "playwright": "^1.59.1"
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "nixpacksPlan": {
+      "phases": {
+        "setup": {
+          "nixPkgs": ["python3", "nodejs"]
+        }
+      }
+    }
   },
-  "scripts": {
-    "start": "python3 serve_static.py"
+  "deploy": {
+    "startCommand": "python3 serve_static.py",
+    "restartPolicyType": "ON_FAILURE"
   }
 }
