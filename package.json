@@ -1,11 +1,8 @@
 {
-  "name": "redditauth",
-  "version": "1.0.0",
-  "description": "Reddit Opportunity Scanner & Auto-poster",
-  "scripts": {
-    "start": "python serve_static.py"
-  },
   "dependencies": {
-    "playwright": "^1.0.0"
+    "playwright": "^1.59.1"
+  },
+  "scripts": {
+    "start": "python3 serve_static.py"
   }
 }

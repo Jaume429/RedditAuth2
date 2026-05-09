@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python serve_static.py",
+    "startCommand": "python3 serve_static.py",
     "restartPolicyType": "ON_FAILURE"
   }
 }
