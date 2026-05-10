@@ -1,8 +1,11 @@
 [phases.setup]
-nixPkgs = ["python3", "nodejs_20"]
+nixPkgs = ["python3", "nodejs_20", "xvfb-run", "xorg.xvfb"]
 
 [phases.install]
 cmds = ["npm install"]
+
+[phases.build]
+cmds = ["npx playwright install chromium"]
 
 [phases.build]
 cmds = ["npx playwright install chromium"]

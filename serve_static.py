@@ -164,7 +164,7 @@ except OSError as error:
 print(f"RedditAuth server ready at http://{HOST}:{PORT}/", flush=True)
 try:
     proc = subprocess.Popen(
-        ["node", "reddit-queue.mjs"],
+        ["xvfb-run", "node", "reddit-queue.mjs"],
         cwd=str(ROOT),
         stdout=sys.stdout,
         stderr=sys.stderr,
