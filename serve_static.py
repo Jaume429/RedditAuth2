@@ -164,7 +164,7 @@ print(f"RedditAuth server ready at http://{HOST}:{PORT}/", flush=True)
 subprocess.Popen(
     ["node", "reddit-queue.mjs"],
     cwd=str(ROOT),
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
 )
 server.serve_forever()
