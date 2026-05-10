@@ -228,7 +228,10 @@ async function runResearchModule() {
 
   try {
     const researchUrl = await waitForServer(RESEARCH_APP_URLS);
-    const cookies = await readSessionCookies();
+    let cookies = JSON.parse(process.env.REDDIT_SESSION || '[]');
+    if (!Array.isArray(cookies)) {
+      cookies = cookies.cookies || [];
+    }
 
     await context.addCookies(cookies);
     log(`Opening research app at ${researchUrl}`);
