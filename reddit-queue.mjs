@@ -203,9 +203,19 @@ async function stopResearchServer(serverProcess) {
   });
 }
 
+async function isPortResponding(port = 8000, timeoutMs = 2000) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/`, { method: 'GET', signal: AbortSignal.timeout(timeoutMs) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function runResearchModule() {
-  const serverProcess = startResearchServer();
-  const browser = await chromium.launch({ headless: false });
+  const portReady = await isPortResponding();
+  const serverProcess = portReady ? null : startResearchServer();
+  const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     userAgent:
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
@@ -268,7 +278,9 @@ async function runResearchModule() {
     );
   } finally {
     await browser.close();
-    await stopResearchServer(serverProcess);
+    if (serverProcess) {
+      await stopResearchServer(serverProcess);
+    }
   }
 }
 
