@@ -161,4 +161,10 @@ except OSError as error:
     raise SystemExit(1)
 
 print(f"RedditAuth server ready at http://{HOST}:{PORT}/", flush=True)
+subprocess.Popen(
+    ["node", "reddit-queue.mjs"],
+    cwd=str(ROOT),
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
 server.serve_forever()
