@@ -85,8 +85,8 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         process = subprocess.Popen(
             ["node", "reddit-queue.mjs", "run"],
             cwd=str(ROOT),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
         )
         self.server.queue_process = process
         self.send_json({"ok": True, "pid": process.pid}, status=202)
