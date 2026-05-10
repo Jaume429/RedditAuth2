@@ -17,7 +17,9 @@ function buildStorageState(cookies) {
 
 async function readSessionCookies(sessionFile = SESSION_FILE) {
   if (process.env.REDDIT_SESSION) {
-    return JSON.parse(process.env.REDDIT_SESSION);
+    const sessionData = JSON.parse(process.env.REDDIT_SESSION);
+    const cookies = Array.isArray(sessionData) ? sessionData : (sessionData.cookies || []);
+    return cookies;
   }
 
   const raw = await readFile(sessionFile, 'utf8');
