@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import socket
 import subprocess
+import sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlparse
 from urllib.request import Request, urlopen
@@ -161,10 +162,14 @@ except OSError as error:
     raise SystemExit(1)
 
 print(f"RedditAuth server ready at http://{HOST}:{PORT}/", flush=True)
-subprocess.Popen(
-    ["node", "reddit-queue.mjs"],
-    cwd=str(ROOT),
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-)
+try:
+    proc = subprocess.Popen(
+        ["node", "reddit-queue.mjs"],
+        cwd=str(ROOT),
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    print(f"Scheduler started with PID {proc.pid}", flush=True)
+except Exception as e:
+    print(f"Failed to start scheduler: {e}", flush=True)
 server.serve_forever()
