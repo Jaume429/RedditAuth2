@@ -13,5 +13,8 @@
   "deploy": {
     "startCommand": "python3 serve_static.py",
     "restartPolicyType": "ON_FAILURE"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
   }
 }
