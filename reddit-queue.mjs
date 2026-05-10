@@ -236,7 +236,7 @@ async function runResearchModule() {
     await context.addCookies(cookies);
     log(`Opening research app at ${researchUrl}`);
     await page.goto(researchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.locator('#scanButton').click({ timeout: 10000 });
+    await page.evaluate(() => document.getElementById('scanButton').click());
     log('Research scan started');
 
     await page.waitForFunction(
