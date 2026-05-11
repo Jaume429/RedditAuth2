@@ -39,6 +39,9 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/queue/run":
             self.run_queue_job()
             return
+        if self.path == "/api/queue/add":
+            self.add_to_queue_item()
+            return
         self.send_error(404, "Unknown API endpoint")
 
     def end_headers(self):
@@ -90,6 +93,45 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         )
         self.server.queue_process = process
         self.send_json({"ok": True, "pid": process.pid}, status=202)
+
+    def add_to_queue_item(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            payload = json.loads(body.decode("utf-8"))
+            
+            postUrl = payload.get("postUrl", "").strip()
+            commentText = payload.get("commentText", "").strip()
+            subreddit = payload.get("subreddit", "").strip()
+            
+            if not postUrl or not commentText or not subreddit:
+                self.send_json(
+                    {"ok": False, "error": "Missing postUrl, commentText, or subreddit"},
+                    status=400
+                )
+                return
+            
+            # Build a queue item similar to reddit-queue.mjs
+            import time
+            item = {
+                "id": f"queue_{int(time.time() * 1000)}_{int(time.time() % 1 * 1000000)}",
+                "postUrl": postUrl,
+                "commentText": commentText,
+                "subreddit": subreddit,
+                "status": "pending",
+                "scheduledAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "postedAt": None,
+            }
+            
+            items = self.read_queue_items()
+            items.append(item)
+            self.write_queue_items(items)
+            
+            self.send_json({"ok": True, "item": item}, status=201)
+        except json.JSONDecodeError:
+            self.send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+        except Exception as e:
+            self.send_json({"ok": False, "error": str(e)}, status=500)
 
     def return_gumroad(self):
         try:
