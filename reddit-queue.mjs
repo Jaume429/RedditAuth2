@@ -427,8 +427,50 @@ export async function getQueueStatus() {
   return readQueue();
 }
 
+async function syncQueueToRailway() {
+  log('Syncing existing queue items to Railway');
+  
+  const RAILWAY_URL = 'https://redditauth2-production.up.railway.app/api/queue/add';
+  const queue = await readQueue();
+  const pendingItems = queue.filter((item) => item.status === 'pending');
+  
+  if (pendingItems.length === 0) {
+    log('No pending items to sync');
+    return;
+  }
+  
+  log(`Found ${pendingItems.length} pending items to sync to Railway`);
+  
+  for (const item of pendingItems) {
+    try {
+      const response = await fetch(RAILWAY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postUrl: item.postUrl,
+          commentText: item.commentText,
+          subreddit: item.subreddit
+        })
+      });
+
+      if (response.ok) {
+        log(`Synced to Railway: ${item.postUrl} for r/${item.subreddit}`);
+      } else {
+        log(`Railway sync failed (${response.status}): ${item.postUrl}`);
+      }
+    } catch (error) {
+      log(`Railway sync error for ${item.postUrl}: ${error.message}`);
+    }
+  }
+  
+  log(`Finished syncing ${pendingItems.length} items to Railway`);
+}
+
 export async function runDailyJob() {
   log('Starting daily Reddit automation job');
+  
+  // Sync any existing local queue items to Railway first
+  await syncQueueToRailway();
   
   // Run research up to 5 times, with 30-second delays, until we have 4 pending items for today
   const MAX_RESEARCH_ATTEMPTS = 5;
