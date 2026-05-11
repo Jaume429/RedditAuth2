@@ -186,31 +186,41 @@ export async function postComment(postUrl, commentText) {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
   });
   const page = await context.newPage();
+  page.setDefaultTimeout(15000);
 
   try {
-    await context.addCookies(cookies);
-    await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Wrap entire posting logic in Promise.race with 30 second timeout
+    const result = await Promise.race([
+      (async () => {
+        await context.addCookies(cookies);
+        await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    const commentInput = await findCommentInput(page);
-    await typeLikeHuman(commentInput, commentText);
-    await page.waitForTimeout(1500);
+        const commentInput = await findCommentInput(page);
+        await typeLikeHuman(commentInput, commentText);
+        await page.waitForTimeout(1500);
 
-    const submitResult = await submitComment(page);
-    if (!submitResult.clicked) {
-      const result = buildResult(false, postUrl, commentText, 'No submit button found.');
+        const submitResult = await submitComment(page);
+        if (!submitResult.clicked) {
+          return buildResult(false, postUrl, commentText, 'No submit button found.');
+        }
+
+        const confirmation = await confirmNoVisibleError(page);
+        if (!confirmation.ok) {
+          return buildResult(false, postUrl, commentText, confirmation.details);
+        }
+
+        return buildResult(true, postUrl, commentText);
+      })(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout after 30s')), 30000)
+      ),
+    ]);
+
+    if (result.success) {
+      console.log(`[${result.timestamp}] success ${result.postUrl} :: ${result.commentPreview}`);
+    } else {
       console.error(`[${result.timestamp}] failed ${result.postUrl} :: ${result.commentPreview}`);
-      return result;
     }
-
-    const confirmation = await confirmNoVisibleError(page);
-    if (!confirmation.ok) {
-      const result = buildResult(false, postUrl, commentText, confirmation.details);
-      console.error(`[${result.timestamp}] failed ${result.postUrl} :: ${result.commentPreview}`);
-      return result;
-    }
-
-    const result = buildResult(true, postUrl, commentText);
-    console.log(`[${result.timestamp}] success ${result.postUrl} :: ${result.commentPreview}`);
     return result;
   } catch (error) {
     const result = buildResult(false, postUrl, commentText, error.message);
