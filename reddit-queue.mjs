@@ -98,6 +98,10 @@ function countPostedToday(queue) {
   return queue.filter((item) => item.status === 'posted' && isSameDay(item.postedAt)).length;
 }
 
+function countPendingToday(queue) {
+  return queue.filter((item) => item.status === 'pending' && isSameDay(item.scheduledAt)).length;
+}
+
 function postedTodayForSubreddit(queue, subreddit) {
   return queue.some(
     (item) =>
@@ -405,23 +409,43 @@ export async function getQueueStatus() {
 
 export async function runDailyJob() {
   log('Starting daily Reddit automation job');
-  const opportunities = await runResearchModule();
+  
+  // Run research up to 5 times, with 30-second delays, until we have 4 pending items for today
+  const MAX_RESEARCH_ATTEMPTS = 5;
+  let attempt = 0;
+  let pendingCount = 0;
+  
+  while (attempt < MAX_RESEARCH_ATTEMPTS && pendingCount < 4) {
+    attempt += 1;
+    log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS}`);
+    
+    const opportunities = await runResearchModule();
+    log(`Selected ${opportunities.length} opportunities from research`);
+    
+    for (const opportunity of opportunities) {
+      try {
+        const enriched = await enrichOpportunity(opportunity);
+        if (isOlderThan48Hours(enriched.createdAtMs)) {
+          log(`Skipping ${enriched.postUrl} because the post is older than 48 hours`);
+          continue;
+        }
 
-  log(`Selected ${opportunities.length} opportunities from research`);
-  for (const opportunity of opportunities) {
-    try {
-      const enriched = await enrichOpportunity(opportunity);
-      if (isOlderThan48Hours(enriched.createdAtMs)) {
-        log(`Skipping ${enriched.postUrl} because the post is older than 48 hours`);
-        continue;
+        await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit);
+      } catch (error) {
+        log(`Could not queue an opportunity: ${error.message}`);
       }
-
-      await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit);
-    } catch (error) {
-      log(`Could not queue an opportunity: ${error.message}`);
+    }
+    
+    const queue = await readQueue();
+    pendingCount = countPendingToday(queue);
+    log(`Current pending items for today: ${pendingCount}`);
+    
+    if (pendingCount < 4 && attempt < MAX_RESEARCH_ATTEMPTS) {
+      log(`Only ${pendingCount} pending items (need 4). Retrying in 30 seconds...`);
+      await sleep(30000);
     }
   }
-
+  
   const queue = await processQueue();
   log('Daily Reddit automation job finished');
   return queue;
