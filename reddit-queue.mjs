@@ -451,50 +451,6 @@ export async function runDailyJob() {
   return queue;
 }
 
-function nextRandomRunTime(from = new Date()) {
-  const next = new Date(from);
-  next.setSeconds(0, 0);
-
-  const hour = next.getHours();
-  const minute = next.getMinutes();
-  const inWindow = hour >= 9 && (hour < 11 || (hour === 11 && minute === 0));
-
-  if (!inWindow) {
-    if (hour >= 11) {
-      next.setDate(next.getDate() + 1);
-    }
-    next.setHours(9, 0, 0, 0);
-  }
-
-  const offsetMinutes = randomBetween(0, 120);
-  next.setMinutes(next.getMinutes() + offsetMinutes);
-
-  if (next <= from) {
-    next.setDate(next.getDate() + 1);
-    next.setHours(9, 0, 0, 0);
-    next.setMinutes(next.getMinutes() + randomBetween(0, 120));
-  }
-
-  return next;
-}
-
-function scheduleDailyJob() {
-  const nextRun = nextRandomRunTime();
-  const delayMs = nextRun.getTime() - Date.now();
-
-  log(`Next automatic daily job scheduled for ${nextRun.toISOString()}`);
-
-  setTimeout(async () => {
-    try {
-      await runDailyJob();
-    } catch (error) {
-      log(`Scheduled daily job failed: ${error.message}`);
-    } finally {
-      scheduleDailyJob();
-    }
-  }, delayMs);
-}
-
 async function main() {
   const command = process.argv[2];
 
@@ -510,8 +466,23 @@ async function main() {
     return;
   }
 
-  log('Starting scheduler mode');
-  scheduleDailyJob();
+  if (command === 'add') {
+    const postUrl = process.argv[3];
+    const commentText = process.argv[4];
+    const subreddit = process.argv[5];
+
+    if (!postUrl || !commentText || !subreddit) {
+      console.error('[reddit-queue] Usage: node reddit-queue.mjs add <postUrl> <commentText> <subreddit>');
+      process.exit(1);
+    }
+
+    const item = await addToQueue(postUrl, commentText, subreddit);
+    console.log(item);
+    return;
+  }
+
+  console.error('[reddit-queue] Usage: node reddit-queue.mjs <run|status|add>');
+  process.exit(1);
 }
 
 const currentFilePath = fileURLToPath(import.meta.url);

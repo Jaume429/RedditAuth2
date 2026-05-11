@@ -212,14 +212,4 @@ except OSError as error:
     raise SystemExit(1)
 
 print(f"RedditAuth server ready at http://{HOST}:{PORT}/", flush=True)
-try:
-    proc = subprocess.Popen(
-        ["xvfb-run", "node", "reddit-queue.mjs"],
-        cwd=str(ROOT),
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
-    print(f"Scheduler started with PID {proc.pid}", flush=True)
-except Exception as e:
-    print(f"Failed to start scheduler: {e}", flush=True)
 server.serve_forever()
