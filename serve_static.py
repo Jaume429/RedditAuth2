@@ -137,10 +137,17 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
         except HTTPError as error:
-            self.send_response(error.code)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(error.read() or b'{"error":"Reddit request failed"}')
+            if error.code == 403:
+                # Return empty results array for 403 Forbidden instead of propagating error
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b'{"data": {"children": [], "after": null}}')
+            else:
+                self.send_response(error.code)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(error.read() or b'{"error":"Reddit request failed"}')
         except URLError as error:
             self.send_response(502)
             self.send_header("Content-Type", "application/json; charset=utf-8")
