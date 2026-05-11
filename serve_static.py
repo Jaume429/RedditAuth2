@@ -160,7 +160,7 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
 
         reddit_url = (
             f"https://www.reddit.com/r/{quote(subreddit)}/search.json"
-            f"?q={quote(query)}&sort=new&limit=25&t=week&restrict_sr=1"
+            f"?q={quote(query)}&sort=new&limit=25&t=day&restrict_sr=1"
         )
         request = Request(
             reddit_url,
