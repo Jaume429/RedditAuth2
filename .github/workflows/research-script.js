@@ -94,6 +94,11 @@ async function fetchSubredditSearch(subreddit, query) {
     return retry.json();
   }
 
+  if (response.status === 403) {
+    console.log(`403 blocked for r/${subreddit}, skipping...`);
+    return { data: { children: [] } };
+  }
+
   if (!response.ok) {
     throw new Error(`Reddit fetch failed for r/${subreddit}: ${response.status}`);
   }
