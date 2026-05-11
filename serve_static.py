@@ -139,6 +139,7 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         except HTTPError as error:
             if error.code == 403:
                 # Return empty results array for 403 Forbidden instead of propagating error
+                print(f"[reddit-proxy] 403 blocked for r/{subreddit}", flush=True)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.end_headers()
