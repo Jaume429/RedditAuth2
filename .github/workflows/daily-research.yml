@@ -102,7 +102,7 @@ jobs:
               for (const opportunity of opportunities) {
                 const postUrl = opportunity.reddit_url || opportunity.url;
                 const commentText = opportunity.reply || opportunity.value_comment || opportunity.link_reply || '';
-                const match = String(postUrl).match(/\\/r\\/([^\\/]+)/i);
+                const match = String(postUrl).match(/\/r\/([^\/]+)/i);
                 const subreddit = match?.[1] || 'unknown';
                 
                 if (!postUrl || !commentText) {
