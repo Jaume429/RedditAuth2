@@ -234,6 +234,16 @@ function stripMarkdownFence(text) {
 
 async function analyzeWithGemini(posts) {
   try {
+    // List available models for debugging
+    try {
+      const modelsUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+      const modelsResponse = await fetch(modelsUrl);
+      const modelsData = await modelsResponse.json();
+      log(`Available Gemini models: ${JSON.stringify(modelsData, null, 2)}`);
+    } catch (err) {
+      log(`Could not fetch models list: ${err.message}`);
+    }
+
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
     const response = await fetch(`${endpoint}?key=${encodeURIComponent(GEMINI_API_KEY)}`, {
       method: "POST",
