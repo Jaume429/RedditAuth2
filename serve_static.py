@@ -5,6 +5,7 @@ import json
 import socket
 import subprocess
 import sys
+import urllib.request
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlparse
 from urllib.request import Request, urlopen
@@ -17,6 +18,11 @@ QUEUE_FILE = ROOT / "queue.json"
 
 GUMROAD_TOKEN = "3oLvgbdcBVg-ka0klN-3LEe9f1TeNzFc5IOOlSCfYcA"
 GUMROAD_PRODUCT_ID = "dicmd"
+
+PROXY_HOST = "p.webshare.io"
+PROXY_PORT = 80
+PROXY_USER = "aaubcdkx"
+PROXY_PASS = "ecljgj60smyr"
 
 
 class NoCacheHandler(SimpleHTTPRequestHandler):
@@ -171,13 +177,19 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         )
 
         try:
-            with urlopen(request, timeout=12) as response:
-                body = response.read()
-                self.send_response(response.status)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(body)
+            proxy_handler = urllib.request.ProxyHandler({
+                'http': f'http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}',
+                'https': f'http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}'
+            })
+            opener = urllib.request.build_opener(proxy_handler)
+            response = opener.open(request, timeout=12)
+            body = response.read()
+            self.send_response(response.status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            response.close()
         except HTTPError as error:
             if error.code == 403:
                 # Return empty results array for 403 Forbidden instead of propagating error

@@ -406,18 +406,26 @@ async function processQueue() {
     }
 
     log(`Posting queued comment to ${item.postUrl}`);
-    const result = await postComment(item.postUrl, item.commentText);
+    try {
+      const result = await postComment(item.postUrl, item.commentText);
 
-    if (result.success) {
-      const postedAt = new Date().toISOString();
-      await markQueueItem(queue, item.id, 'posted', postedAt);
-      postedToday += 1;
-      log(`Posted successfully to r/${item.subreddit} at ${postedAt}`);
-      continue;
+      if (result.success) {
+        const postedAt = new Date().toISOString();
+        await markQueueItem(queue, item.id, 'posted', postedAt);
+        postedToday += 1;
+        log(`Posted successfully to r/${item.subreddit} at ${postedAt}`);
+        continue;
+      }
+
+      await markQueueItem(queue, item.id, 'failed');
+      log(`Posting failed for ${item.postUrl}${result.details ? `: ${result.details}` : ''}`);
+    } catch (error) {
+      await markQueueItem(queue, item.id, 'failed');
+      log(`Posting error for ${item.postUrl}: ${error.message}`);
+      if (error.stack) {
+        log(`Stack trace: ${error.stack}`);
+      }
     }
-
-    await markQueueItem(queue, item.id, 'failed');
-    log(`Posting failed for ${item.postUrl}${result.details ? `: ${result.details}` : ''}`);
   }
 
   return readQueue();
@@ -473,39 +481,43 @@ export async function runDailyJob() {
   await syncQueueToRailway();
   
   // Run research up to 5 times, with 30-second delays, until we have 4 pending items for today
-  const MAX_RESEARCH_ATTEMPTS = 5;
-  let attempt = 0;
-  let pendingCount = 0;
-  
-  while (attempt < MAX_RESEARCH_ATTEMPTS && pendingCount < 4) {
-    attempt += 1;
-    log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS}`);
+  try {
+    const MAX_RESEARCH_ATTEMPTS = 5;
+    let attempt = 0;
+    let pendingCount = 0;
     
-    const opportunities = await runResearchModule();
-    log(`Selected ${opportunities.length} opportunities from research`);
-    
-    for (const opportunity of opportunities) {
-      try {
-        const enriched = await enrichOpportunity(opportunity);
-        if (isOlderThan48Hours(enriched.createdAtMs)) {
-          log(`Skipping ${enriched.postUrl} because the post is older than 48 hours`);
-          continue;
-        }
+    while (attempt < MAX_RESEARCH_ATTEMPTS && pendingCount < 4) {
+      attempt += 1;
+      log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS}`);
+      
+      const opportunities = await runResearchModule();
+      log(`Selected ${opportunities.length} opportunities from research`);
+      
+      for (const opportunity of opportunities) {
+        try {
+          const enriched = await enrichOpportunity(opportunity);
+          if (isOlderThan48Hours(enriched.createdAtMs)) {
+            log(`Skipping ${enriched.postUrl} because the post is older than 48 hours`);
+            continue;
+          }
 
-        await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit);
-      } catch (error) {
-        log(`Could not queue an opportunity: ${error.message}`);
+          await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit);
+        } catch (error) {
+          log(`Could not queue an opportunity: ${error.message}`);
+        }
+      }
+      
+      const queue = await readQueue();
+      pendingCount = countPendingToday(queue);
+      log(`Current pending items for today: ${pendingCount}`);
+      
+      if (pendingCount < 4 && attempt < MAX_RESEARCH_ATTEMPTS) {
+        log(`Only ${pendingCount} pending items (need 4). Retrying in 30 seconds...`);
+        await sleep(30000);
       }
     }
-    
-    const queue = await readQueue();
-    pendingCount = countPendingToday(queue);
-    log(`Current pending items for today: ${pendingCount}`);
-    
-    if (pendingCount < 4 && attempt < MAX_RESEARCH_ATTEMPTS) {
-      log(`Only ${pendingCount} pending items (need 4). Retrying in 30 seconds...`);
-      await sleep(30000);
-    }
+  } catch (err) {
+    log(`Research phase failed: ${err.message}. Continuing to posting phase...`);
   }
   
   const queue = await processQueue();
