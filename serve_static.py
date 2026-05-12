@@ -20,7 +20,7 @@ GUMROAD_TOKEN = "3oLvgbdcBVg-ka0klN-3LEe9f1TeNzFc5IOOlSCfYcA"
 GUMROAD_PRODUCT_ID = "dicmd"
 
 PROXY_HOST = "p.webshare.io"
-PROXY_PORT = 80
+PROXY_PORT = 10000
 PROXY_USER = "aaubcdkx"
 PROXY_PASS = "ecljgj60smyr"
 
