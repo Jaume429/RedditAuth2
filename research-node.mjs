@@ -89,7 +89,7 @@ async function verifyProxyIsWorking() {
     const httpAgent = new HttpProxyAgent(PROXY_URL);
     const httpsAgent = new HttpsProxyAgent(PROXY_URL);
     
-    const response = await fetch('https://ipv4.webshare.io/', {
+    const response = await fetch('https://ipv4.icanhazip.com', {
       httpAgent,
       httpsAgent,
       timeout: 10000
