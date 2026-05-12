@@ -1,10 +1,7 @@
 import { chromium } from 'playwright';
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyRedditSession } from './reddit-session.mjs';
-
-const SESSION_FILE = path.resolve(process.cwd(), 'reddit_session.json');
 
 function randomBetween(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -20,13 +17,16 @@ function buildResult(success, postUrl, commentText, details = null) {
   };
 }
 
-async function readSessionCookies(sessionFile = SESSION_FILE) {
-  const raw = await readFile(sessionFile, 'utf8');
+async function readSessionCookies() {
+  const raw = process.env.REDDIT_SESSION;
+  if (!raw) {
+    throw new Error('REDDIT_SESSION environment variable is not set');
+  }
   const parsed = JSON.parse(raw);
   const cookies = Array.isArray(parsed) ? parsed : parsed?.cookies;
 
   if (!Array.isArray(cookies) || cookies.length === 0) {
-    throw new Error(`Session file is empty or invalid: ${sessionFile}`);
+    throw new Error('Session is empty or invalid');
   }
 
   return cookies;
