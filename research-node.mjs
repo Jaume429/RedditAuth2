@@ -82,6 +82,41 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function verifyProxyIsWorking() {
+  try {
+    log("Verifying proxy connection...");
+    
+    const httpAgent = new HttpProxyAgent(PROXY_URL);
+    const httpsAgent = new HttpsProxyAgent(PROXY_URL);
+    
+    const response = await fetch('https://ipv4.webshare.io/', {
+      httpAgent,
+      httpsAgent,
+      timeout: 10000
+    });
+
+    if (!response.ok) {
+      log(`Proxy verification failed: HTTP ${response.status}`);
+      return false;
+    }
+
+    const text = await response.text();
+    const ipMatch = text.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
+    
+    if (ipMatch) {
+      const proxyIp = ipMatch[0];
+      log(`Proxy is working. Detected IP: ${proxyIp}`);
+      return true;
+    } else {
+      log("Proxy response received but could not parse IP");
+      return false;
+    }
+  } catch (error) {
+    log(`Proxy verification failed: ${error.message}`);
+    return false;
+  }
+}
+
 async function fetchRedditPosts() {
   const httpAgent = new HttpProxyAgent(PROXY_URL);
   const httpsAgent = new HttpsProxyAgent(PROXY_URL);
@@ -276,6 +311,11 @@ function normalizeRisk(risk) {
 export async function runResearch() {
   try {
     log("Starting research module");
+    
+    const proxyOk = await verifyProxyIsWorking();
+    if (!proxyOk) {
+      log("Warning: proxy verification failed, but continuing anyway...");
+    }
     
     const posts = await fetchRedditPosts();
     log(`Fetched ${posts.length} recent posts`);
