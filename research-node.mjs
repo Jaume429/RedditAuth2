@@ -239,7 +239,10 @@ async function analyzeWithGemini(posts) {
       const modelsUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(GEMINI_API_KEY)}`;
       const modelsResponse = await fetch(modelsUrl);
       const modelsData = await modelsResponse.json();
-      log(`Available Gemini models: ${JSON.stringify(modelsData, null, 2)}`);
+      const generateContentModels = (modelsData.models || [])
+        .filter(model => model.supportedGenerationMethods && model.supportedGenerationMethods.includes("generateContent"))
+        .map(model => model.name);
+      log(`Available generateContent models: ${generateContentModels.join(", ")}`);
     } catch (err) {
       log(`Could not fetch models list: ${err.message}`);
     }
