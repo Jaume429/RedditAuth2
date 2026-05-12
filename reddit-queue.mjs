@@ -1,17 +1,10 @@
-import { chromium } from 'playwright';
 import { readFile, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { postComment } from './reddit-poster.mjs';
+import { runResearch } from './research-node.mjs';
 
 const QUEUE_FILE = path.resolve(process.cwd(), 'queue.json');
-const SESSION_FILE = path.resolve(process.cwd(), 'reddit_session.json');
-const RESULTS_STORAGE_KEY = 'redditauth.lastResults';
-const RESEARCH_APP_URLS = [
-  process.env.REDDITAUTH_APP_URL || 'http://127.0.0.1:8081/',
-  'http://127.0.0.1:8000/',
-];
 const MIN_DELAY_MS = 45 * 60 * 1000;
 const MAX_DELAY_MS = 90 * 60 * 1000;
 const MAX_POSTS_PER_DAY = 4;
@@ -64,22 +57,6 @@ async function readQueue() {
 
 async function writeQueue(queue) {
   await writeFile(QUEUE_FILE, JSON.stringify(queue, null, 2), 'utf8');
-}
-
-async function readSessionCookies(sessionFile = SESSION_FILE) {
-  if (process.env.REDDIT_SESSION) {
-    return JSON.parse(process.env.REDDIT_SESSION);
-  }
-
-  const raw = await readFile(sessionFile, 'utf8');
-  const parsed = JSON.parse(raw);
-  const cookies = Array.isArray(parsed) ? parsed : parsed?.cookies;
-
-  if (!Array.isArray(cookies) || cookies.length === 0) {
-    throw new Error(`Session file is empty or invalid: ${sessionFile}`);
-  }
-
-  return cookies;
 }
 
 function buildQueueItem(postUrl, commentText, subreddit, scheduledAt) {
@@ -158,141 +135,6 @@ async function fetchPostMetadata(postUrl) {
 
 function isOlderThan48Hours(createdAtMs) {
   return !createdAtMs || Date.now() - createdAtMs > MAX_POST_AGE_MS;
-}
-
-function startResearchServer() {
-  const serverProcess = spawn('python', ['serve_static.py'], {
-    cwd: process.cwd(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
-
-  serverProcess.stdout.on('data', (chunk) => {
-    log(`serve_static.py: ${chunk.toString().trim()}`);
-  });
-
-  serverProcess.stderr.on('data', (chunk) => {
-    log(`serve_static.py error: ${chunk.toString().trim()}`);
-  });
-
-  return serverProcess;
-}
-
-async function waitForServer(urls, timeoutMs = 15000) {
-  const startedAt = Date.now();
-
-  while (Date.now() - startedAt < timeoutMs) {
-    for (const url of urls) {
-      try {
-        const response = await fetch(url, { method: 'GET' });
-        if (response.ok) {
-          return url;
-        }
-      } catch {
-        // Keep polling until one URL is ready.
-      }
-    }
-
-    await sleep(500);
-  }
-
-  throw new Error(`Research server did not become ready within ${timeoutMs / 1000} seconds.`);
-}
-
-async function stopResearchServer(serverProcess) {
-  if (!serverProcess || serverProcess.killed) {
-    return;
-  }
-
-  serverProcess.kill();
-  await new Promise((resolve) => {
-    serverProcess.once('exit', resolve);
-    setTimeout(resolve, 3000);
-  });
-}
-
-async function isPortResponding(port = 8000, timeoutMs = 2000) {
-  try {
-    const response = await fetch(`http://127.0.0.1:${port}/`, { method: 'GET', signal: AbortSignal.timeout(timeoutMs) });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function runResearchModule() {
-  const portReady = await isPortResponding();
-  const serverProcess = portReady ? null : startResearchServer();
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
-  });
-  const page = await context.newPage();
-
-  try {
-    const researchUrl = await waitForServer(RESEARCH_APP_URLS);
-    let cookies = JSON.parse(process.env.REDDIT_SESSION || '[]');
-    if (!Array.isArray(cookies)) {
-      cookies = cookies.cookies || [];
-    }
-
-    await context.addCookies(cookies);
-    log(`Opening research app at ${researchUrl}`);
-    await page.goto(researchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.evaluate(() => document.getElementById('scanButton').click());
-    log('Research scan started');
-
-    await page.waitForFunction(
-      ({ storageKey }) => {
-        const value = localStorage.getItem(storageKey);
-        const errorText = document.querySelector('#errorMessage')?.textContent || '';
-        const emptyVisible = document.querySelector('#emptyState')?.hidden === false;
-        return Boolean(value) || Boolean(errorText) || emptyVisible;
-      },
-      { storageKey: RESULTS_STORAGE_KEY },
-      { timeout: 180000 }
-    );
-
-    const result = await page.evaluate(({ storageKey }) => {
-      const stored = localStorage.getItem(storageKey);
-      const errorText = document.querySelector('#errorMessage')?.textContent || '';
-      const emptyVisible = document.querySelector('#emptyState')?.hidden === false;
-      const statusText = document.querySelector('#statusText')?.textContent || '';
-      return {
-        stored,
-        errorText,
-        emptyVisible,
-        statusText,
-      };
-    }, { storageKey: RESULTS_STORAGE_KEY });
-
-    if (result.errorText) {
-      throw new Error(`Research module reported an error: ${result.errorText}`);
-    }
-
-    if (result.emptyVisible && !result.stored) {
-      log('Research returned no opportunities');
-      return [];
-    }
-
-    const parsed = JSON.parse(result.stored || '[]');
-    if (!Array.isArray(parsed)) {
-      throw new Error('Research module returned an invalid results payload.');
-    }
-
-    log(`Research completed with ${parsed.length} opportunities`);
-    return parsed.slice(0, 4);
-  } catch (error) {
-    throw new Error(
-      `Unable to run the existing research flow in the browser. ${error.message}`
-    );
-  } finally {
-    await browser.close();
-    if (serverProcess) {
-      await stopResearchServer(serverProcess);
-    }
-  }
 }
 
 export async function addToQueue(postUrl, commentText, subreddit) {
@@ -490,7 +332,7 @@ export async function runDailyJob() {
       attempt += 1;
       log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS}`);
       
-      const opportunities = await runResearchModule();
+      const opportunities = await runResearch();
       log(`Selected ${opportunities.length} opportunities from research`);
       
       for (const opportunity of opportunities) {
