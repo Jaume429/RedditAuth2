@@ -194,7 +194,6 @@ export async function postComment(postUrl, commentText) {
       (async () => {
         await context.addCookies(cookies);
         await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForLoadState('networkidle', { timeout: 15000 });
 
         console.log('DEBUG: Page HTML (first 3000 chars):', (await page.content()).slice(0, 3000));
 
