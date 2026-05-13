@@ -195,6 +195,8 @@ export async function postComment(postUrl, commentText) {
         await context.addCookies(cookies);
         await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
+        console.log('DEBUG: Page HTML (first 3000 chars):', (await page.content()).slice(0, 3000));
+
         const commentInput = await findCommentInput(page);
         await typeLikeHuman(commentInput, commentText);
         await page.waitForTimeout(1500);
