@@ -189,11 +189,12 @@ export async function postComment(postUrl, commentText) {
   page.setDefaultTimeout(15000);
 
   try {
-    // Wrap entire posting logic in Promise.race with 30 second timeout
+    // Wrap entire posting logic in Promise.race with 60 second timeout
     const result = await Promise.race([
       (async () => {
         await context.addCookies(cookies);
         await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForLoadState('networkidle', { timeout: 15000 });
 
         console.log('DEBUG: Page HTML (first 3000 chars):', (await page.content()).slice(0, 3000));
 
@@ -214,7 +215,7 @@ export async function postComment(postUrl, commentText) {
         return buildResult(true, postUrl, commentText);
       })(),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout after 30s')), 30000)
+        setTimeout(() => reject(new Error('Timeout after 60s')), 60000)
       ),
     ]);
 
