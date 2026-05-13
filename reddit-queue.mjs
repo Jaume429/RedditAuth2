@@ -144,7 +144,6 @@ export async function addToQueue(postUrl, commentText, subreddit) {
 
   const RAILWAY_URL = 'https://redditauth2-production.up.railway.app/api/queue/add';
 
-  // Try to POST to Railway first
   try {
     const response = await fetch(RAILWAY_URL, {
       method: 'POST',
@@ -154,23 +153,15 @@ export async function addToQueue(postUrl, commentText, subreddit) {
 
     if (response.ok) {
       log(`Posted to Railway: ${postUrl} for r/${subreddit}`);
+      return { success: true, postUrl, subreddit };
     } else {
       log(`Railway POST failed (${response.status}): ${postUrl}`);
+      return { success: false, postUrl, subreddit };
     }
   } catch (error) {
     log(`Railway POST error: ${error.message}`);
+    return { success: false, postUrl, subreddit, error: error.message };
   }
-
-  // Save locally as fallback
-  const queue = await readQueue();
-  const baseTime = nextScheduleBase(queue);
-  const scheduledAt = new Date(baseTime + randomBetween(MIN_DELAY_MS, MAX_DELAY_MS)).toISOString();
-  const item = buildQueueItem(postUrl, commentText, subreddit, scheduledAt);
-
-  queue.push(item);
-  await writeQueue(queue);
-  log(`Queued locally: ${item.postUrl} for r/${item.subreddit} at ${item.scheduledAt}`);
-  return item;
 }
 
 async function enrichOpportunity(opportunity) {
