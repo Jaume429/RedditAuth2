@@ -77,7 +77,7 @@ async function expandCommentEditor(page) {
     }
   }
 
-  throw new Error('Could not find the "Join the conversation" area to expand the Reddit editor.');
+  return;
 }
 
 async function findCommentInput(page) {
