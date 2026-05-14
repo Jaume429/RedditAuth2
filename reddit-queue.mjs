@@ -363,9 +363,9 @@ export async function runDailyJob() {
     log(`Research phase failed: ${err.message}. Continuing to posting phase...`);
   }
   
-  const queue = await processQueue();
+  const currentQueue = await processQueue();
   log('Daily Reddit automation job finished');
-  return queue;
+  return currentQueue;
 }
 
 async function main() {
