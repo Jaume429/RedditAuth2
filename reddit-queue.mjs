@@ -310,6 +310,16 @@ async function syncQueueToRailway() {
 export async function runDailyJob() {
   log('Starting daily Reddit automation job');
   
+  // Clear all items scheduled for today to start fresh
+  let queue = await readQueue();
+  const itemsBeforeClear = queue.length;
+  queue = queue.filter((item) => !isSameDay(item.scheduledAt));
+  const itemsCleared = itemsBeforeClear - queue.length;
+  if (itemsCleared > 0) {
+    await writeQueue(queue);
+    log(`Cleared ${itemsCleared} items scheduled for today. Starting fresh.`);
+  }
+  
   // Sync any existing local queue items to Railway first
   await syncQueueToRailway();
   

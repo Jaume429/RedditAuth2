@@ -106,6 +106,7 @@ const els = {
   nextPostCountdownValue: document.querySelector("#nextPostCountdownValue"),
   nextPostMeta: document.querySelector("#nextPostMeta"),
   activityTableBody: document.querySelector("#activityTableBody"),
+  activityTableContainer: document.querySelector("#activityTableBody")?.closest(".feed-container"),
   activityRowTemplate: document.querySelector("#activityRowTemplate"),
 };
 
@@ -118,6 +119,7 @@ let nextQueuePostAt = null;
 init();
 
 function init() {
+  setupActivityTableScroll();
   setupDashboardEffects();
   els.scanButton.addEventListener("click", scanReddit);
   els.runQueueButton.addEventListener("click", runQueueNow);
@@ -134,6 +136,15 @@ function init() {
   if (autopostEnabled) {
     scheduleAutopost();
   }
+}
+
+function setupActivityTableScroll() {
+  if (!els.activityTableContainer) {
+    return;
+  }
+
+  els.activityTableContainer.style.maxHeight = "400px";
+  els.activityTableContainer.style.overflowY = "auto";
 }
 
 function setupDashboardEffects() {

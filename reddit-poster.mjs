@@ -82,6 +82,8 @@ async function expandCommentEditor(page) {
 
 async function findCommentInput(page) {
   const inputSelectors = [
+    'shreddit-composer [contenteditable="true"]',
+    '[slot="rte-body"] [contenteditable="true"]',
     'div[contenteditable="true"][role="textbox"]',
     'textarea[name="comment"]',
     'textarea[placeholder*="comment" i]',
@@ -99,8 +101,11 @@ async function findCommentInput(page) {
         await locator.waitFor({ state: 'visible', timeout: 10000 });
         return locator;
       } catch {
+        console.log(`Tried selector: ${selector} - not found`);
         continue;
       }
+    } else {
+      console.log(`Tried selector: ${selector} - not found`);
     }
   }
 
