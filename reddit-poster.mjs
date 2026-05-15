@@ -133,7 +133,7 @@ async function submitComment(page) {
       try {
         await button.waitFor({ state: 'visible', timeout: 3000 });
         console.log(`Submit button found with selector: ${selector}`);
-        await button.click({ timeout: 5000 });
+        await button.click({ timeout: 5000, noWaitAfter: true });
         await page.waitForTimeout(3000);
         return { clicked: true, selector };
       } catch {
@@ -169,6 +169,40 @@ async function confirmNoVisibleError(page) {
         continue;
       }
     }
+  }
+
+  const submitButton = page
+    .locator('button[type="submit"], button:has-text("Comment"), button:has-text("Submit")')
+    .filter({ hasNotText: 'Cancel' })
+    .first();
+  const commentInput = page
+    .locator('shreddit-composer [contenteditable="true"], [slot="rte-body"] [contenteditable="true"], div[contenteditable="true"][role="textbox"]')
+    .first();
+
+  const successCheckDeadline = Date.now() + 5000;
+  let successSignal = false;
+
+  while (Date.now() < successCheckDeadline) {
+    if ((await submitButton.count()) && (await submitButton.isDisabled().catch(() => false))) {
+      successSignal = true;
+      break;
+    }
+
+    if (!(await commentInput.count())) {
+      successSignal = true;
+      break;
+    }
+
+    if (((await commentInput.textContent().catch(() => null)) || '').trim() === '') {
+      successSignal = true;
+      break;
+    }
+
+    await page.waitForTimeout(250);
+  }
+
+  if (successSignal) {
+    return { ok: true };
   }
 
   return { ok: true };
