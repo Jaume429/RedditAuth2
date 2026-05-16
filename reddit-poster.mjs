@@ -55,6 +55,26 @@ async function scrollToCommentSection(page) {
   await page.mouse.wheel(0, 900);
 }
 
+async function waitForRedditRender(page) {
+  const renderSelectors = [
+    'shreddit-post',
+    'shreddit-comment-tree',
+    '[data-testid="post-container"]',
+    '[data-testid="comment-tree"]',
+    'div[contenteditable="true"][role="textbox"]',
+    'textarea[name="comment"]',
+  ];
+
+  await Promise.race([
+    Promise.any(
+      renderSelectors.map((selector) =>
+        page.locator(selector).first().waitFor({ state: 'attached', timeout: 5000 })
+      )
+    ).catch(() => null),
+    page.waitForTimeout(5000),
+  ]);
+}
+
 async function expandCommentEditor(page) {
   const placeholderSelectors = [
     'text="Join the conversation"',
@@ -233,6 +253,7 @@ export async function postComment(postUrl, commentText) {
       (async () => {
         await context.addCookies(cookies);
         await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await waitForRedditRender(page);
 
         console.log('DEBUG: Page HTML (first 3000 chars):', (await page.content()).slice(0, 3000));
 
