@@ -70,7 +70,7 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
   }
 ]`;
 
-const PROXY_URL = 'http://k7ylAHOvzHPNj04m:RExx2IDogCap32JZ_session-5ewZjMzB_lifetime-30m_skipispstatic-1@geo.iproyal.com:12321';
+const PROXY_URL = 'http://k7ylAHOvzHPNj04m:RExx2IDogCap32JZ_session-y1n4dXew_lifetime-30m_skipispstatic-1@geo.iproyal.com:12321';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyAfKQOjTD1Q95tbvRJq6w3eAUMaFX_5pNs";
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
 
