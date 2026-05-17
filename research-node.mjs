@@ -70,7 +70,7 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
   }
 ]`;
 
-const PROXY_URL = 'http://aaubcdkx:ecljgj60smyr@p.webshare.io:80';
+const PROXY_URL = 'http://aaubcdkx-es-8:ecljgj60smyr@p.webshare.io:80';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyAfKQOjTD1Q95tbvRJq6w3eAUMaFX_5pNs";
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
 
