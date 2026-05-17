@@ -34,6 +34,15 @@ function isSameDay(isoTimestamp) {
   return stamp >= startOfToday();
 }
 
+function isTodayUtcDate(isoTimestamp) {
+  if (!isoTimestamp) return false;
+  const stamp = new Date(isoTimestamp);
+  if (Number.isNaN(stamp.getTime())) return false;
+
+  const now = new Date();
+  return stamp.toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
+}
+
 function extractSubreddit(postUrl) {
   const match = String(postUrl).match(/\/r\/([^/]+)/i);
   return match?.[1] || 'unknown';
@@ -310,14 +319,14 @@ async function syncQueueToRailway() {
 export async function runDailyJob() {
   log('Starting daily Reddit automation job');
   
-  // Clear all items scheduled for today to start fresh
+  // Clear all items not scheduled for today's UTC date to start fresh
   let queue = await readQueue();
   const itemsBeforeClear = queue.length;
-  queue = queue.filter((item) => !isSameDay(item.scheduledAt));
+  queue = queue.filter((item) => isTodayUtcDate(item.scheduledAt));
   const itemsCleared = itemsBeforeClear - queue.length;
   if (itemsCleared > 0) {
     await writeQueue(queue);
-    log(`Cleared ${itemsCleared} items scheduled for today. Starting fresh.`);
+    log(`Cleared ${itemsCleared} items not scheduled for today's UTC date. Starting fresh.`);
   }
   
   // Sync any existing local queue items to Railway first

@@ -153,7 +153,12 @@ async function submitComment(page) {
       try {
         await button.waitFor({ state: 'visible', timeout: 3000 });
         console.log(`Submit button found with selector: ${selector}`);
-        await button.click({ timeout: 5000, noWaitAfter: true });
+        await page.waitForTimeout(1000);
+        try {
+          await button.click({ timeout: 5000, noWaitAfter: true });
+        } catch {
+          await button.click({ timeout: 5000, noWaitAfter: true, force: true });
+        }
         await page.waitForTimeout(3000);
         return { clicked: true, selector };
       } catch {
