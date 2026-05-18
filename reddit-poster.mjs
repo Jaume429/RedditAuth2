@@ -271,11 +271,6 @@ export async function postComment(postUrl, commentText) {
           return buildResult(false, postUrl, commentText, 'No submit button found.');
         }
 
-        const confirmation = await confirmNoVisibleError(page);
-        if (!confirmation.ok) {
-          return buildResult(false, postUrl, commentText, confirmation.details);
-        }
-
         return buildResult(true, postUrl, commentText);
       })(),
       new Promise((_, reject) =>

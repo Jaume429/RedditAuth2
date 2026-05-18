@@ -5,10 +5,13 @@ import { postComment } from './reddit-poster.mjs';
 import { runResearch } from './research-node.mjs';
 
 const QUEUE_FILE = path.resolve(process.cwd(), 'queue.json');
-const MIN_DELAY_MS = 45 * 60 * 1000;
-const MAX_DELAY_MS = 90 * 60 * 1000;
+const MIN_DELAY_MS = 2 * 60 * 60 * 1000;
+const MAX_DELAY_MS = 3 * 60 * 60 * 1000;
 const MAX_POSTS_PER_DAY = 4;
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
+const DAILY_JOB_HOUR_UTC = 9;
+const QUEUE_PROCESS_INTERVAL_MS = 10 * 60 * 1000;
+let queueProcessorRunning = false;
 
 function log(message) {
   console.log(`[reddit-queue] ${message}`);
@@ -108,6 +111,26 @@ function nextScheduleBase(queue) {
   return Math.max(Date.now(), latest);
 }
 
+function nextScheduledAt(queue) {
+  const scheduledCountToday = queue.filter(
+    (item) => ['pending', 'posted'].includes(item.status) && isSameDay(item.scheduledAt)
+  ).length;
+  const base = nextScheduleBase(queue);
+  const delay = scheduledCountToday > 0 ? randomBetween(MIN_DELAY_MS, MAX_DELAY_MS) : 0;
+  return new Date(base + delay).toISOString();
+}
+
+function nextDailyJobDate(from = new Date()) {
+  const nextRun = new Date(from);
+  nextRun.setUTCHours(DAILY_JOB_HOUR_UTC, 0, 0, 0);
+
+  if (nextRun <= from) {
+    nextRun.setUTCDate(nextRun.getUTCDate() + 1);
+  }
+
+  return nextRun;
+}
+
 function appendJsonSuffix(postUrl) {
   const url = new URL(postUrl);
   const cleanPath = url.pathname.replace(/\/$/, '');
@@ -151,26 +174,15 @@ export async function addToQueue(postUrl, commentText, subreddit) {
     throw new Error('postUrl, commentText, and subreddit are required.');
   }
 
-  const RAILWAY_URL = 'https://redditauth2-production.up.railway.app/api/queue/add';
+  const queue = await readQueue();
+  const scheduledAt = nextScheduledAt(queue);
+  const item = buildQueueItem(postUrl, commentText, subreddit, scheduledAt);
 
-  try {
-    const response = await fetch(RAILWAY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ postUrl, commentText, subreddit })
-    });
+  queue.push(item);
+  await writeQueue(queue);
 
-    if (response.ok) {
-      log(`Posted to Railway: ${postUrl} for r/${subreddit}`);
-      return { success: true, postUrl, subreddit };
-    } else {
-      log(`Railway POST failed (${response.status}): ${postUrl}`);
-      return { success: false, postUrl, subreddit };
-    }
-  } catch (error) {
-    log(`Railway POST error: ${error.message}`);
-    return { success: false, postUrl, subreddit, error: error.message };
-  }
+  log(`Queued ${postUrl} for r/${subreddit} at ${scheduledAt}`);
+  return { success: true, postUrl, subreddit, item };
 }
 
 async function enrichOpportunity(opportunity) {
@@ -204,12 +216,27 @@ async function markQueueItem(queue, itemId, status, postedAt = null) {
 async function processQueue() {
   const queue = await readQueue();
   let postedToday = countPostedToday(queue);
+  const now = Date.now();
   const pendingItems = queue
-    .filter((item) => item.status === 'pending')
+    .filter((item) => {
+      if (item.status !== 'pending') return false;
+      const scheduledTime = new Date(item.scheduledAt).getTime();
+      return Number.isFinite(scheduledTime) && scheduledTime <= now;
+    })
     .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
 
   if (!pendingItems.length) {
-    log('No pending queue items to process');
+    const futurePendingCount = queue.filter((item) => {
+      if (item.status !== 'pending') return false;
+      const scheduledTime = new Date(item.scheduledAt).getTime();
+      return Number.isFinite(scheduledTime) && scheduledTime > now;
+    }).length;
+
+    if (futurePendingCount > 0) {
+      log(`No due queue items to process. ${futurePendingCount} pending item(s) scheduled for later.`);
+    } else {
+      log('No pending queue items to process');
+    }
     return queue;
   }
 
@@ -238,13 +265,6 @@ async function processQueue() {
       log(`Skipping ${item.postUrl} because it is older than 48 hours`);
       await markQueueItem(queue, item.id, 'failed');
       continue;
-    }
-
-    const scheduledTime = new Date(item.scheduledAt).getTime();
-    const waitMs = scheduledTime - Date.now();
-    if (waitMs > 0) {
-      log(`Waiting ${(waitMs / 60000).toFixed(1)} minutes before posting ${item.postUrl}`);
-      await sleep(waitMs);
     }
 
     log(`Posting queued comment to ${item.postUrl}`);
@@ -377,8 +397,57 @@ export async function runDailyJob() {
   return currentQueue;
 }
 
+function scheduleDailyJob() {
+  const nextRun = nextDailyJobDate();
+  const delayMs = nextRun.getTime() - Date.now();
+
+  log(`Next daily Reddit automation job scheduled for ${nextRun.toISOString()}`);
+
+  setTimeout(async () => {
+    try {
+      await runDailyJob();
+    } catch (error) {
+      log(`Daily Reddit automation job failed: ${error.message}`);
+    } finally {
+      scheduleDailyJob();
+    }
+  }, delayMs);
+}
+
+function startQueueProcessor() {
+  const runProcessor = async () => {
+    if (queueProcessorRunning) {
+      log('Queue processor already running. Skipping this tick.');
+      return;
+    }
+
+    queueProcessorRunning = true;
+    try {
+      await processQueue();
+    } catch (error) {
+      log(`Queue processor failed: ${error.message}`);
+    } finally {
+      queueProcessorRunning = false;
+    }
+  };
+
+  runProcessor();
+  setInterval(runProcessor, QUEUE_PROCESS_INTERVAL_MS);
+}
+
+function startScheduler() {
+  log('Starting automatic Reddit queue scheduler');
+  startQueueProcessor();
+  scheduleDailyJob();
+}
+
 async function main() {
   const command = process.argv[2];
+
+  if (command === 'schedule') {
+    startScheduler();
+    return;
+  }
 
   if (command === 'run') {
     const queue = await runDailyJob();
@@ -407,7 +476,7 @@ async function main() {
     return;
   }
 
-  console.error('[reddit-queue] Usage: node reddit-queue.mjs <run|status|add>');
+  console.error('[reddit-queue] Usage: node reddit-queue.mjs <schedule|run|status|add>');
   process.exit(1);
 }
 
