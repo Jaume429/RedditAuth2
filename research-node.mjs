@@ -1,5 +1,5 @@
-import { HttpProxyAgent } from 'http-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { request as httpsRequest } from 'node:https';
 
 const SUBREDDITS = [
   "SideProject",
@@ -70,9 +70,38 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
   }
 ]`;
 
-const PROXY_URL = 'http://aaubcdkx-es-8:ecljgj60smyr@p.webshare.io:80';
+const PROXY_URLS = [
+  'http://aaubcdkx-gb-1:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx-ca-2:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx-de-3:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx-fr-4:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx-au-5:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx-nl-6:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx-it-7:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx-es-8:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx-be-9:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx-at-10:ecljgj60smyr@p.webshare.io:80',
+];
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyAfKQOjTD1Q95tbvRJq6w3eAUMaFX_5pNs";
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
+const MAX_PROXY_ATTEMPTS = 10;
+const PROXY_RETRY_DELAY_MS = 3000;
+const DATACENTER_ASNS = new Set([
+  'AS16509',
+  'AS14618',
+  'AS8075',
+  'AS14061',
+  'AS63949',
+  'AS20473',
+  'AS16276',
+  'AS24940',
+  'AS36352',
+  'AS45102',
+  'AS9009',
+  'AS31898',
+  'AS398101',
+]);
+let activeProxyUrl = PROXY_URLS[0];
 
 function log(message) {
   console.log(`[research-node] ${message}`);
@@ -82,16 +111,69 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function verifyProxyIsWorking() {
+function proxyLabel(proxyUrl) {
+  const match = proxyUrl.match(/\/\/([^:]+):/);
+  return match?.[1] || "unknown";
+}
+
+function fetchTextViaProxy(url, proxyUrl, options = {}) {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest(url, {
+      method: "GET",
+      headers: options.headers || {},
+      agent: new HttpsProxyAgent(proxyUrl),
+      timeout: options.timeout || 15000,
+    }, (response) => {
+      const chunks = [];
+
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        resolve({
+          ok: response.statusCode >= 200 && response.statusCode < 300,
+          status: response.statusCode,
+          text: async () => body,
+          json: async () => JSON.parse(body),
+        });
+      });
+    });
+
+    request.on("timeout", () => {
+      request.destroy(new Error(`Request timed out after ${options.timeout || 15000}ms`));
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+async function lookupIpDetails(ip) {
+  const response = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, {
+    timeout: 10000
+  });
+
+  if (!response.ok) {
+    throw new Error(`ipapi lookup failed: HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+function isDatacenterIp(ipDetails) {
+  const type = String(ipDetails?.type || "").toLowerCase();
+  const org = String(ipDetails?.org || "");
+
+  if (type === "datacenter") {
+    return true;
+  }
+
+  return Array.from(DATACENTER_ASNS).some((asn) => org.includes(asn));
+}
+
+async function verifyProxyAttempt(proxyUrl) {
   try {
-    log("Verifying proxy connection...");
-    
-    const httpAgent = new HttpProxyAgent(PROXY_URL);
-    const httpsAgent = new HttpsProxyAgent(PROXY_URL);
-    
-    const response = await fetch('https://ipv4.icanhazip.com', {
-      httpAgent,
-      httpsAgent,
+    log(`Verifying proxy connection via ${proxyLabel(proxyUrl)}...`);
+
+    const response = await fetchTextViaProxy('https://ipv4.icanhazip.com', proxyUrl, {
       timeout: 10000
     });
 
@@ -106,20 +188,58 @@ async function verifyProxyIsWorking() {
     if (ipMatch) {
       const proxyIp = ipMatch[0];
       log(`Proxy is working. Detected IP: ${proxyIp}`);
-      return true;
+      return { ok: true, ip: proxyIp, proxyUrl };
     } else {
       log("Proxy response received but could not parse IP");
-      return false;
+      return { ok: false, proxyUrl };
     }
   } catch (error) {
     log(`Proxy verification failed: ${error.message}`);
-    return false;
+    return { ok: false, proxyUrl };
   }
 }
 
+async function verifyProxyIsWorking() {
+  let lastWorkingProxy = null;
+
+  for (let attempt = 1; attempt <= MAX_PROXY_ATTEMPTS; attempt += 1) {
+    const proxyUrl = PROXY_URLS[(attempt - 1) % PROXY_URLS.length];
+    const verification = await verifyProxyAttempt(proxyUrl);
+
+    if (verification.ok) {
+      lastWorkingProxy = verification.proxyUrl;
+
+      try {
+        const ipDetails = await lookupIpDetails(verification.ip);
+
+        if (!isDatacenterIp(ipDetails)) {
+          activeProxyUrl = verification.proxyUrl;
+          log(`Residential proxy confirmed: ${verification.ip}`);
+          return true;
+        }
+
+        log(`Detected datacenter IP ${verification.ip}. Retrying with another proxy...`);
+      } catch (error) {
+        log(`Could not classify proxy IP ${verification.ip}: ${error.message}. Retrying with another proxy...`);
+      }
+    }
+
+    if (attempt < MAX_PROXY_ATTEMPTS) {
+      await delay(PROXY_RETRY_DELAY_MS);
+    }
+  }
+
+  if (lastWorkingProxy) {
+    activeProxyUrl = lastWorkingProxy;
+    log(`Warning: no residential IP found after ${MAX_PROXY_ATTEMPTS} attempts. Proceeding with last working proxy.`);
+    return true;
+  }
+
+  log(`Warning: proxy verification failed after ${MAX_PROXY_ATTEMPTS} attempts.`);
+  return false;
+}
+
 async function fetchRedditPosts() {
-  const httpAgent = new HttpProxyAgent(PROXY_URL);
-  const httpsAgent = new HttpsProxyAgent(PROXY_URL);
   const posts = [];
   const seen = new Set();
 
@@ -131,12 +251,10 @@ async function fetchRedditPosts() {
       log(`Fetching r/${subreddit} for "${query}"...`);
       
       const url = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`;
-      const response = await fetch(url, {
+      const response = await fetchTextViaProxy(url, activeProxyUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         },
-        httpAgent,
-        httpsAgent,
         timeout: 15000
       });
 
