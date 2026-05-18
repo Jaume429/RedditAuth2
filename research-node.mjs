@@ -86,21 +86,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyAfKQOjTD1Q95tbvRJq6w
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
 const MAX_PROXY_ATTEMPTS = 10;
 const PROXY_RETRY_DELAY_MS = 3000;
-const DATACENTER_ASNS = new Set([
-  'AS16509',
-  'AS14618',
-  'AS8075',
-  'AS14061',
-  'AS63949',
-  'AS20473',
-  'AS16276',
-  'AS24940',
-  'AS36352',
-  'AS45102',
-  'AS9009',
-  'AS31898',
-  'AS398101',
-]);
+const DATACENTER_IP_PREFIXES = ['34.', '35.', '52.', '54.', '18.', '3.', '44.'];
 let activeProxyUrl = PROXY_URLS[0];
 
 function log(message) {
@@ -146,27 +132,8 @@ function fetchTextViaProxy(url, proxyUrl, options = {}) {
   });
 }
 
-async function lookupIpDetails(ip) {
-  const response = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, {
-    timeout: 10000
-  });
-
-  if (!response.ok) {
-    throw new Error(`ipapi lookup failed: HTTP ${response.status}`);
-  }
-
-  return response.json();
-}
-
-function isDatacenterIp(ipDetails) {
-  const type = String(ipDetails?.type || "").toLowerCase();
-  const org = String(ipDetails?.org || "");
-
-  if (type === "datacenter") {
-    return true;
-  }
-
-  return Array.from(DATACENTER_ASNS).some((asn) => org.includes(asn));
+function isDatacenterIp(ip) {
+  return DATACENTER_IP_PREFIXES.some((prefix) => ip.startsWith(prefix));
 }
 
 async function verifyProxyAttempt(proxyUrl) {
@@ -179,7 +146,7 @@ async function verifyProxyAttempt(proxyUrl) {
 
     if (!response.ok) {
       log(`Proxy verification failed: HTTP ${response.status}`);
-      return false;
+      return { ok: false, proxyUrl };
     }
 
     const text = await response.text();
@@ -209,18 +176,12 @@ async function verifyProxyIsWorking() {
     if (verification.ok) {
       lastWorkingProxy = verification.proxyUrl;
 
-      try {
-        const ipDetails = await lookupIpDetails(verification.ip);
-
-        if (!isDatacenterIp(ipDetails)) {
-          activeProxyUrl = verification.proxyUrl;
-          log(`Residential proxy confirmed: ${verification.ip}`);
-          return true;
-        }
-
+      if (!isDatacenterIp(verification.ip)) {
+        activeProxyUrl = verification.proxyUrl;
+        log(`Residential proxy confirmed: ${verification.ip}`);
+        return true;
+      } else {
         log(`Detected datacenter IP ${verification.ip}. Retrying with another proxy...`);
-      } catch (error) {
-        log(`Could not classify proxy IP ${verification.ip}: ${error.message}. Retrying with another proxy...`);
       }
     }
 
@@ -397,6 +358,7 @@ ${JSON.stringify(posts, null, 2)}`,
       throw new Error("Gemini returned an empty response.");
     }
 
+    log(`Raw Gemini response: ${rawText}`);
     return JSON.parse(stripMarkdownFence(rawText));
   } catch (error) {
     log(`Gemini analysis failed: ${error.message}`);
