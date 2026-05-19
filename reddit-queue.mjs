@@ -1,10 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ProxyAgent } from 'undici';
 import { postComment } from './reddit-poster.mjs';
 import { runResearch } from './research-node.mjs';
 
 const QUEUE_FILE = path.resolve(process.cwd(), 'queue.json');
+const PROXY_URL = 'http://aaubcdkx-es-8:ecljgj60smyr@p.webshare.io:80';
 const MIN_DELAY_MS = 2 * 60 * 60 * 1000;
 const MAX_DELAY_MS = 3 * 60 * 60 * 1000;
 const MAX_POSTS_PER_DAY = 4;
@@ -140,11 +142,13 @@ function appendJsonSuffix(postUrl) {
 }
 
 async function fetchPostMetadata(postUrl) {
+  const proxyAgent = new ProxyAgent(PROXY_URL);
   const response = await fetch(appendJsonSuffix(postUrl), {
     headers: {
       'User-Agent': 'RedditAuthQueue/1.0',
       accept: 'application/json',
     },
+    dispatcher: proxyAgent,
   });
 
   if (!response.ok) {
