@@ -341,17 +341,9 @@ async function syncQueueToRailway() {
 }
 
 export async function runDailyJob() {
+  await writeQueue([]);
   log('Starting daily Reddit automation job');
-  
-  // Clear all items not scheduled for today's UTC date to start fresh
-  let queue = await readQueue();
-  const itemsBeforeClear = queue.length;
-  queue = queue.filter((item) => isTodayUtcDate(item.scheduledAt));
-  const itemsCleared = itemsBeforeClear - queue.length;
-  if (itemsCleared > 0) {
-    await writeQueue(queue);
-    log(`Cleared ${itemsCleared} items not scheduled for today's UTC date. Starting fresh.`);
-  }
+  log('Cleared all queue items. Starting fresh.');
   
   // Sync any existing local queue items to Railway first
   await syncQueueToRailway();
@@ -360,9 +352,9 @@ export async function runDailyJob() {
   try {
     const MAX_RESEARCH_ATTEMPTS = 5;
     let attempt = 0;
-    let pendingCount = 0;
+    let pendingCount = countPendingToday(await readQueue());
     
-    while (attempt < MAX_RESEARCH_ATTEMPTS && pendingCount < 4) {
+    while (attempt < MAX_RESEARCH_ATTEMPTS && pendingCount < MAX_POSTS_PER_DAY) {
       attempt += 1;
       log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS}`);
       
@@ -370,6 +362,11 @@ export async function runDailyJob() {
       log(`Selected ${opportunities.length} opportunities from research`);
       
       for (const opportunity of opportunities) {
+        if (pendingCount >= MAX_POSTS_PER_DAY) {
+          log(`Queue limit reached (${MAX_POSTS_PER_DAY}). Not adding more opportunities today.`);
+          break;
+        }
+
         try {
           const enriched = await enrichOpportunity(opportunity);
           if (isOlderThan48Hours(enriched.createdAtMs)) {
@@ -377,7 +374,10 @@ export async function runDailyJob() {
             continue;
           }
 
-          await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit);
+          const result = await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit);
+          if (result.success) {
+            pendingCount = countPendingToday(await readQueue());
+          }
         } catch (error) {
           log(`Could not queue an opportunity: ${error.message}`);
         }
@@ -387,8 +387,8 @@ export async function runDailyJob() {
       pendingCount = countPendingToday(queue);
       log(`Current pending items for today: ${pendingCount}`);
       
-      if (pendingCount < 4 && attempt < MAX_RESEARCH_ATTEMPTS) {
-        log(`Only ${pendingCount} pending items (need 4). Retrying in 30 seconds...`);
+      if (pendingCount < MAX_POSTS_PER_DAY && attempt < MAX_RESEARCH_ATTEMPTS) {
+        log(`Only ${pendingCount} pending items (need ${MAX_POSTS_PER_DAY}). Retrying in 30 seconds...`);
         await sleep(30000);
       }
     }

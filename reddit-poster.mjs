@@ -100,6 +100,49 @@ async function expandCommentEditor(page) {
   return;
 }
 
+async function clickJoinButtonIfPresent(page) {
+  const joinButton = page.locator('button:has-text("Join")').first();
+  if (!(await joinButton.count())) {
+    return;
+  }
+
+  try {
+    await joinButton.click({ timeout: 5000 });
+    console.log('Clicked Join button before looking for the comment box.');
+    await page.waitForTimeout(2000);
+  } catch (error) {
+    console.log(`Join button was present but could not be clicked: ${error.message}`);
+  }
+}
+
+async function logRestrictionNotices(page) {
+  const selectors = [
+    'shreddit-composer',
+    'text=/locked/i',
+    'text=/restricted/i',
+    'text=/archived/i',
+    'text=/karma/i',
+    'text=/join/i',
+    'text=/not available/i',
+  ];
+  const seen = new Set();
+
+  for (const selector of selectors) {
+    const locator = page.locator(selector);
+    const count = await locator.count().catch(() => 0);
+
+    for (let index = 0; index < Math.min(count, 5); index += 1) {
+      const text = ((await locator.nth(index).textContent().catch(() => null)) || '').trim();
+      if (!text || seen.has(text)) {
+        continue;
+      }
+
+      seen.add(text);
+      console.log(`Restriction/debug notice (${selector}): ${text}`);
+    }
+  }
+}
+
 async function findCommentInput(page) {
   const inputSelectors = [
     'shreddit-composer [contenteditable="true"]',
@@ -261,6 +304,11 @@ export async function postComment(postUrl, commentText) {
         await waitForRedditRender(page);
 
         console.log('DEBUG: Page HTML (first 3000 chars):', (await page.content()).slice(0, 3000));
+
+        await clickJoinButtonIfPresent(page);
+        await scrollToCommentSection(page);
+        await expandCommentEditor(page);
+        await logRestrictionNotices(page);
 
         const commentInput = await findCommentInput(page);
         await typeLikeHuman(commentInput, commentText);
