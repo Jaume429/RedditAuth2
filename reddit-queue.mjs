@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ProxyAgent } from 'undici';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { postComment } from './reddit-poster.mjs';
 import { runResearch } from './research-node.mjs';
 
@@ -142,13 +142,13 @@ function appendJsonSuffix(postUrl) {
 }
 
 async function fetchPostMetadata(postUrl) {
-  const proxyAgent = new ProxyAgent(PROXY_URL);
+  const proxyAgent = new HttpsProxyAgent(PROXY_URL);
   const response = await fetch(appendJsonSuffix(postUrl), {
     headers: {
       'User-Agent': 'RedditAuthQueue/1.0',
       accept: 'application/json',
     },
-    dispatcher: proxyAgent,
+    agent: proxyAgent,
   });
 
   if (!response.ok) {
