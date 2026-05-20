@@ -143,6 +143,35 @@ async function logRestrictionNotices(page) {
   }
 }
 
+async function detectPostRestriction(page) {
+  const restrictionChecks = [
+    { label: 'Locked post', selector: 'text=/locked post|post is locked|this post is locked/i' },
+    { label: 'Archived post', selector: 'text=/archived post|post is archived|this post is archived/i' },
+  ];
+
+  for (const check of restrictionChecks) {
+    const locator = page.locator(check.selector).first();
+    if (await locator.count().catch(() => 0)) {
+      try {
+        await locator.waitFor({ state: 'visible', timeout: 1000 });
+        return check.label;
+      } catch {
+        return check.label;
+      }
+    }
+  }
+
+  const bodyText = ((await page.locator('body').textContent().catch(() => null)) || '').toLowerCase();
+  if (bodyText.includes('locked post') || bodyText.includes('this post is locked') || bodyText.includes('post is locked')) {
+    return 'Locked post';
+  }
+  if (bodyText.includes('archived post') || bodyText.includes('this post is archived') || bodyText.includes('post is archived')) {
+    return 'Archived post';
+  }
+
+  return null;
+}
+
 async function findCommentInput(page) {
   const inputSelectors = [
     'shreddit-composer [contenteditable="true"]',
@@ -170,6 +199,11 @@ async function findCommentInput(page) {
     } else {
       console.log(`Tried selector: ${selector} - not found`);
     }
+  }
+
+  const restriction = await detectPostRestriction(page);
+  if (restriction) {
+    throw new Error(`Could not find the Reddit comment box on the page. ${restriction}`);
   }
 
   throw new Error('Could not find the Reddit comment box on the page.');

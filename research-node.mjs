@@ -93,6 +93,24 @@ function log(message) {
   console.log(`[research-node] ${message}`);
 }
 
+function normalizePostUrl(postUrl) {
+  try {
+    const url = new URL(String(postUrl));
+    url.protocol = 'https:';
+    url.hostname = url.hostname.replace(/^www\./i, '').toLowerCase();
+    url.hash = '';
+    url.search = '';
+    url.pathname = url.pathname.replace(/\/$/, '');
+    return url.toString();
+  } catch {
+    return String(postUrl || '').trim().replace(/\/$/, '');
+  }
+}
+
+function buildKnownPostUrlSet(postUrls = []) {
+  return new Set(postUrls.filter(Boolean).map(normalizePostUrl));
+}
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -311,8 +329,9 @@ function stripMarkdownFence(text) {
     .trim();
 }
 
-async function analyzeWithGemini(posts) {
+async function analyzeWithGemini(posts, knownPostUrls = []) {
   try {
+    const knownUrls = [...new Set(knownPostUrls.filter(Boolean).map(String))];
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
     const response = await fetch(`${endpoint}?key=${encodeURIComponent(GEMINI_API_KEY)}`, {
       method: "POST",
@@ -331,7 +350,11 @@ CRITICAL: Analyze these Reddit posts and identify ONLY the BEST 5-10 matches.
 - If fewer than 5 are genuinely excellent, return fewer.
 - Do NOT pad with weak matches.
 - Ensure each post meets ALL three must-have criteria.
+- Do NOT suggest any post whose reddit_url appears in Already queued or blocked post URLs.
 - Return VALID JSON ONLY. No explanations.
+
+Already queued or blocked post URLs to avoid:
+${JSON.stringify(knownUrls, null, 2)}
 
 Posts to analyze:
 ${JSON.stringify(posts, null, 2)}`,
@@ -366,11 +389,21 @@ ${JSON.stringify(posts, null, 2)}`,
   }
 }
 
-function normalizeOpportunities(opportunities) {
+function normalizeOpportunities(opportunities, knownPostUrls = []) {
   if (!Array.isArray(opportunities)) return [];
 
+  const knownPostUrlSet = buildKnownPostUrlSet(knownPostUrls);
   return opportunities
     .filter((item) => item && (item.reddit_url || item.url) && item.title)
+    .filter((item) => {
+      const postUrl = String(item.reddit_url || item.url || '');
+      if (!knownPostUrlSet.has(normalizePostUrl(postUrl))) {
+        return true;
+      }
+
+      log(`Skipping already known post: ${postUrl}`);
+      return false;
+    })
     .map((item) => ({
       reddit_url: String(item.reddit_url || item.url || ""),
       title: String(item.title),
@@ -388,8 +421,9 @@ function normalizeRisk(risk) {
   return "none";
 }
 
-export async function runResearch() {
+export async function runResearch(options = {}) {
   try {
+    const knownPostUrls = Array.isArray(options.knownPostUrls) ? options.knownPostUrls : [];
     log("Starting research module");
     
     const proxyOk = await verifyProxyIsWorking();
@@ -408,8 +442,8 @@ export async function runResearch() {
     const shortlisted = shortlistPosts(posts);
     log(`Shortlisted ${shortlisted.length} posts for analysis`);
     
-    const opportunities = await analyzeWithGemini(shortlisted);
-    const normalized = normalizeOpportunities(opportunities);
+    const opportunities = await analyzeWithGemini(shortlisted, knownPostUrls);
+    const normalized = normalizeOpportunities(opportunities, knownPostUrls);
     
     log(`Research complete: ${normalized.length} opportunities found`);
     return normalized;

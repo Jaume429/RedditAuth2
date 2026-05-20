@@ -6,6 +6,7 @@ import { postComment } from './reddit-poster.mjs';
 import { runResearch } from './research-node.mjs';
 
 const QUEUE_FILE = path.resolve(process.cwd(), 'queue.json');
+const BLOCKED_POSTS_FILE = path.resolve(process.cwd(), 'blocked-posts.json');
 const PROXY_URL = 'http://aaubcdkx-es-8:ecljgj60smyr@p.webshare.io:80';
 const MIN_DELAY_MS = 2 * 60 * 60 * 1000;
 const MAX_DELAY_MS = 3 * 60 * 60 * 1000;
@@ -57,6 +58,24 @@ function normalizeQueue(queue) {
   return Array.isArray(queue) ? queue : [];
 }
 
+function normalizeBlockedPosts(blockedPosts) {
+  return Array.isArray(blockedPosts) ? blockedPosts : [];
+}
+
+function normalizePostUrl(postUrl) {
+  try {
+    const url = new URL(String(postUrl));
+    url.protocol = 'https:';
+    url.hostname = url.hostname.replace(/^www\./i, '').toLowerCase();
+    url.hash = '';
+    url.search = '';
+    url.pathname = url.pathname.replace(/\/$/, '');
+    return url.toString();
+  } catch {
+    return String(postUrl || '').trim().replace(/\/$/, '');
+  }
+}
+
 async function readQueue() {
   try {
     const raw = await readFile(QUEUE_FILE, 'utf8');
@@ -71,6 +90,49 @@ async function readQueue() {
 
 async function writeQueue(queue) {
   await writeFile(QUEUE_FILE, JSON.stringify(queue, null, 2), 'utf8');
+}
+
+async function readBlockedPosts() {
+  try {
+    const raw = await readFile(BLOCKED_POSTS_FILE, 'utf8');
+    return normalizeBlockedPosts(JSON.parse(raw));
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function writeBlockedPosts(blockedPosts) {
+  await writeFile(BLOCKED_POSTS_FILE, JSON.stringify(blockedPosts, null, 2), 'utf8');
+}
+
+async function isBlockedPostUrl(postUrl) {
+  const blockedPosts = await readBlockedPosts();
+  const normalizedPostUrl = normalizePostUrl(postUrl);
+  return blockedPosts.some((blockedPostUrl) => normalizePostUrl(blockedPostUrl) === normalizedPostUrl);
+}
+
+function queueHasPostUrl(queue, postUrl) {
+  const normalizedPostUrl = normalizePostUrl(postUrl);
+  return queue.some((item) => normalizePostUrl(item.postUrl) === normalizedPostUrl);
+}
+
+function getQueuePostUrls(queue) {
+  return queue.map((item) => item.postUrl).filter(Boolean);
+}
+
+async function blockPostUrl(postUrl) {
+  const blockedPosts = await readBlockedPosts();
+  const normalizedPostUrl = normalizePostUrl(postUrl);
+  if (blockedPosts.some((blockedPostUrl) => normalizePostUrl(blockedPostUrl) === normalizedPostUrl)) {
+    return;
+  }
+
+  blockedPosts.push(postUrl);
+  await writeBlockedPosts(blockedPosts);
+  log(`Marked post as permanently blocked: ${postUrl}`);
 }
 
 function buildQueueItem(postUrl, commentText, subreddit, scheduledAt) {
@@ -173,12 +235,30 @@ function isOlderThan48Hours(createdAtMs) {
   return !createdAtMs || Date.now() - createdAtMs > MAX_POST_AGE_MS;
 }
 
+function isMissingCommentBoxFailure(details) {
+  return String(details || '').includes('Could not find the Reddit comment box on the page');
+}
+
+function isLockedOrArchivedRestrictionFailure(details) {
+  const text = String(details || '');
+  return isMissingCommentBoxFailure(text) && /(Locked post|Archived post)/i.test(text);
+}
+
 export async function addToQueue(postUrl, commentText, subreddit) {
   if (!postUrl || !commentText || !subreddit) {
     throw new Error('postUrl, commentText, and subreddit are required.');
   }
 
+  if (await isBlockedPostUrl(postUrl)) {
+    return { success: false, postUrl, subreddit, blocked: true };
+  }
+
   const queue = await readQueue();
+  if (queueHasPostUrl(queue, postUrl)) {
+    log(`Skipping already known post: ${postUrl}`);
+    return { success: false, postUrl, subreddit, duplicate: true };
+  }
+
   const scheduledAt = nextScheduledAt(queue);
   const item = buildQueueItem(postUrl, commentText, subreddit, scheduledAt);
 
@@ -283,9 +363,17 @@ async function processQueue() {
         continue;
       }
 
+      if (isLockedOrArchivedRestrictionFailure(result.details)) {
+        await blockPostUrl(item.postUrl);
+      }
+
       await markQueueItem(queue, item.id, 'failed');
       log(`Posting failed for ${item.postUrl}${result.details ? `: ${result.details}` : ''}`);
     } catch (error) {
+      if (isLockedOrArchivedRestrictionFailure(error.message)) {
+        await blockPostUrl(item.postUrl);
+      }
+
       await markQueueItem(queue, item.id, 'failed');
       log(`Posting error for ${item.postUrl}: ${error.message}`);
       if (error.stack) {
@@ -358,7 +446,10 @@ export async function runDailyJob() {
       attempt += 1;
       log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS}`);
       
-      const opportunities = await runResearch();
+      const queueBeforeResearch = await readQueue();
+      const blockedPostUrls = await readBlockedPosts();
+      const knownPostUrls = [...getQueuePostUrls(queueBeforeResearch), ...blockedPostUrls];
+      const opportunities = await runResearch({ knownPostUrls });
       log(`Selected ${opportunities.length} opportunities from research`);
       
       for (const opportunity of opportunities) {
@@ -368,6 +459,16 @@ export async function runDailyJob() {
         }
 
         try {
+          const postUrl = opportunity.reddit_url || opportunity.url;
+          if (await isBlockedPostUrl(postUrl)) {
+            continue;
+          }
+
+          if (queueHasPostUrl(await readQueue(), postUrl)) {
+            log(`Skipping already known post: ${postUrl}`);
+            continue;
+          }
+
           const enriched = await enrichOpportunity(opportunity);
           if (isOlderThan48Hours(enriched.createdAtMs)) {
             log(`Skipping ${enriched.postUrl} because the post is older than 48 hours`);
