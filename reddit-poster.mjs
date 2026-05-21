@@ -3,9 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyRedditSession } from './reddit-session.mjs';
 
-function randomBetween(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+const POST_COMMENT_TIMEOUT_MS = 120000;
+const DEBUG_REDDIT_POSTER = process.env.DEBUG_REDDIT_POSTER === '1';
 
 function buildResult(success, postUrl, commentText, details = null) {
   return {
@@ -116,6 +115,10 @@ async function clickJoinButtonIfPresent(page) {
 }
 
 async function logRestrictionNotices(page) {
+  if (!DEBUG_REDDIT_POSTER) {
+    return;
+  }
+
   const selectors = [
     'shreddit-composer',
     'text=/locked/i',
@@ -212,8 +215,21 @@ async function findCommentInput(page) {
 async function typeLikeHuman(locator, commentText) {
   await locator.click({ timeout: 5000 });
 
-  for (const char of commentText) {
-    await locator.type(char, { delay: randomBetween(50, 150) });
+  try {
+    await locator.fill(commentText, { timeout: 10000 });
+    return;
+  } catch {
+    // Some Reddit editor variants expose contenteditable nodes that do not support fill().
+  }
+
+  try {
+    await locator.evaluate((element, value) => {
+      element.textContent = value;
+      element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+    }, commentText);
+    return;
+  } catch {
+    await locator.type(commentText, { delay: 5 });
   }
 }
 
@@ -330,7 +346,7 @@ export async function postComment(postUrl, commentText) {
   page.setDefaultTimeout(15000);
 
   try {
-    // Wrap entire posting logic in Promise.race with 60 second timeout
+    // Keep a hard cap so a stuck Reddit page does not block the queue forever.
     const result = await Promise.race([
       (async () => {
         await context.addCookies(cookies);
@@ -354,7 +370,7 @@ export async function postComment(postUrl, commentText) {
         return buildResult(true, postUrl, commentText);
       })(),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout after 60s')), 60000)
+        setTimeout(() => reject(new Error(`Timeout after ${POST_COMMENT_TIMEOUT_MS / 1000}s`)), POST_COMMENT_TIMEOUT_MS)
       ),
     ]);
 
