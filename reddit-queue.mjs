@@ -198,6 +198,7 @@ function nextDailyJobDate(from = new Date()) {
 
 function appendJsonSuffix(postUrl) {
   const url = new URL(postUrl);
+  url.hostname = 'www.reddit.com';
   const cleanPath = url.pathname.replace(/\/$/, '');
   url.pathname = `${cleanPath}.json`;
   url.search = 'raw_json=1';
@@ -205,6 +206,8 @@ function appendJsonSuffix(postUrl) {
 }
 
 function fetchTextViaProxy(url, proxyUrl, options = {}) {
+  const redirectCount = options.redirectCount || 0;
+
   return new Promise((resolve, reject) => {
     const request = httpsRequest(url, {
       method: 'GET',
@@ -216,6 +219,19 @@ function fetchTextViaProxy(url, proxyUrl, options = {}) {
 
       response.on('data', (chunk) => chunks.push(chunk));
       response.on('end', () => {
+        if (
+          [301, 302, 303, 307, 308].includes(response.statusCode) &&
+          response.headers.location &&
+          redirectCount < 5
+        ) {
+          const redirectUrl = new URL(response.headers.location, url).toString();
+          resolve(fetchTextViaProxy(redirectUrl, proxyUrl, {
+            ...options,
+            redirectCount: redirectCount + 1,
+          }));
+          return;
+        }
+
         const body = Buffer.concat(chunks).toString('utf8');
         resolve({
           ok: response.statusCode >= 200 && response.statusCode < 300,
