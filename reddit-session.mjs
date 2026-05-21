@@ -65,18 +65,7 @@ export async function verifyRedditSession(sessionFile = SESSION_FILE) {
 
   try {
     cookies = await readSessionCookies(sessionFile);
-    console.log('Loaded cookies from session file:');
-    console.log(
-      cookies.map((cookie) => ({
-        name: cookie.name,
-        domain: cookie.domain,
-        path: cookie.path,
-        expires: cookie.expires,
-        httpOnly: cookie.httpOnly,
-        secure: cookie.secure,
-        sameSite: cookie.sameSite,
-      }))
-    );
+    console.log(`Loaded ${cookies.length} Reddit session cookie(s).`);
   } catch (error) {
     console.error(`Reddit session missing or unreadable. Re-run the login script. ${error.message}`);
     return false;
@@ -106,15 +95,7 @@ export async function verifyRedditSession(sessionFile = SESSION_FILE) {
       data = null;
     }
 
-    console.log('Response from reddit.com/api/me.json:');
-    console.log({
-      ok: response.ok(),
-      status: response.status(),
-      statusText: response.statusText(),
-      url: response.url(),
-    });
-    console.log('Parsed JSON from reddit.com/api/me.json:');
-    console.log(data);
+    console.log(`Reddit session check returned ${response.status()} ${response.statusText()}.`);
 
     if (!response.ok()) {
       console.error('Reddit session is invalid or expired. Re-run the login script.');

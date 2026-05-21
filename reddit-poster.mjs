@@ -337,8 +337,6 @@ export async function postComment(postUrl, commentText) {
         await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await waitForRedditRender(page);
 
-        console.log('DEBUG: Page HTML (first 3000 chars):', (await page.content()).slice(0, 3000));
-
         await clickJoinButtonIfPresent(page);
         await scrollToCommentSection(page);
         await expandCommentEditor(page);

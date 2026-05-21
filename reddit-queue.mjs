@@ -274,11 +274,23 @@ async function fetchPostMetadata(postUrl) {
     subreddit: postData.subreddit || extractSubreddit(postUrl),
     createdAtMs: Number(postData.created_utc || 0) * 1000,
     title: postData.title || '',
+    locked: Boolean(postData.locked),
+    archived: Boolean(postData.archived),
   };
 }
 
 function isOlderThan48Hours(createdAtMs) {
   return !createdAtMs || Date.now() - createdAtMs > MAX_POST_AGE_MS;
+}
+
+function isUnavailableForComments(metadata) {
+  return Boolean(metadata?.locked || metadata?.archived);
+}
+
+function unavailableReason(metadata) {
+  if (metadata?.locked) return 'locked';
+  if (metadata?.archived) return 'archived';
+  return 'unavailable';
 }
 
 function isMissingCommentBoxFailure(details) {
@@ -330,6 +342,8 @@ async function enrichOpportunity(opportunity) {
     subreddit: metadata.subreddit || extractSubreddit(postUrl),
     createdAtMs: metadata.createdAtMs,
     title: metadata.title,
+    locked: metadata.locked,
+    archived: metadata.archived,
   };
 }
 
@@ -393,6 +407,13 @@ async function processQueue() {
 
     if (isOlderThan48Hours(metadata.createdAtMs)) {
       log(`Skipping ${item.postUrl} because it is older than 48 hours`);
+      await markQueueItem(queue, item.id, 'failed');
+      continue;
+    }
+
+    if (isUnavailableForComments(metadata)) {
+      log(`Skipping ${item.postUrl} because the post is ${unavailableReason(metadata)}`);
+      await blockPostUrl(item.postUrl);
       await markQueueItem(queue, item.id, 'failed');
       continue;
     }
@@ -519,6 +540,12 @@ export async function runDailyJob() {
           const enriched = await enrichOpportunity(opportunity);
           if (isOlderThan48Hours(enriched.createdAtMs)) {
             log(`Skipping ${enriched.postUrl} because the post is older than 48 hours`);
+            continue;
+          }
+
+          if (isUnavailableForComments(enriched)) {
+            log(`Skipping ${enriched.postUrl} because the post is ${unavailableReason(enriched)}`);
+            await blockPostUrl(enriched.postUrl);
             continue;
           }
 
