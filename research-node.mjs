@@ -428,7 +428,8 @@ export async function runResearch(options = {}) {
     
     const proxyOk = await verifyProxyIsWorking();
     if (!proxyOk) {
-      log("Warning: proxy verification failed, but continuing anyway...");
+      log("Proxy verification failed. Skipping research until a proxy is available.");
+      return [];
     }
     
     const posts = await fetchRedditPosts();

@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { request as httpsRequest } from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HttpsProxyAgent } from 'https-proxy-agent';
@@ -203,14 +204,43 @@ function appendJsonSuffix(postUrl) {
   return url.toString();
 }
 
+function fetchTextViaProxy(url, proxyUrl, options = {}) {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest(url, {
+      method: 'GET',
+      headers: options.headers || {},
+      agent: new HttpsProxyAgent(proxyUrl),
+      timeout: options.timeout || 15000,
+    }, (response) => {
+      const chunks = [];
+
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve({
+          ok: response.statusCode >= 200 && response.statusCode < 300,
+          status: response.statusCode,
+          text: async () => body,
+          json: async () => JSON.parse(body),
+        });
+      });
+    });
+
+    request.on('timeout', () => {
+      request.destroy(new Error(`Request timed out after ${options.timeout || 15000}ms`));
+    });
+    request.on('error', reject);
+    request.end();
+  });
+}
+
 async function fetchPostMetadata(postUrl) {
-  const proxyAgent = new HttpsProxyAgent(PROXY_URL);
-  const response = await fetch(appendJsonSuffix(postUrl), {
+  const response = await fetchTextViaProxy(appendJsonSuffix(postUrl), PROXY_URL, {
     headers: {
       'User-Agent': 'RedditAuthQueue/1.0',
       accept: 'application/json',
     },
-    agent: proxyAgent,
+    timeout: 15000,
   });
 
   if (!response.ok) {
@@ -429,12 +459,13 @@ async function syncQueueToRailway() {
 }
 
 export async function runDailyJob() {
-  await writeQueue([]);
   log('Starting daily Reddit automation job');
-  log('Cleared all queue items. Starting fresh.');
   
-  // Sync any existing local queue items to Railway first
+  // Sync any existing local queue items to Railway before clearing the daily work queue.
   await syncQueueToRailway();
+  
+  await writeQueue([]);
+  log('Cleared all queue items. Starting fresh.');
   
   // Run research up to 5 times, with 30-second delays, until we have 4 pending items for today
   try {
