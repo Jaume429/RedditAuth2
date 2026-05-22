@@ -13,7 +13,7 @@ const MIN_DELAY_MS = 2 * 60 * 60 * 1000;
 const MAX_DELAY_MS = 3 * 60 * 60 * 1000;
 const MAX_POSTS_PER_DAY = 4;
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
-const DAILY_JOB_HOUR_UTC = 9;
+const DAILY_JOB_HOUR_UTC = 7;
 const QUEUE_PROCESS_INTERVAL_MS = 10 * 60 * 1000;
 let queueProcessorRunning = false;
 

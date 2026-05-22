@@ -5,6 +5,8 @@ import json
 import socket
 import subprocess
 import sys
+import threading
+import time
 import urllib.request
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlparse
@@ -34,6 +36,18 @@ def start_queue_scheduler():
     )
     print(f"Started Reddit queue scheduler with pid {process.pid}", flush=True)
     return process
+
+
+def monitor_queue_scheduler(server):
+    while True:
+        time.sleep(30)
+        process = getattr(server, "queue_scheduler", None)
+        if process and process.poll() is None:
+            continue
+
+        exit_code = process.poll() if process else "missing"
+        print(f"Reddit queue scheduler stopped ({exit_code}). Restarting...", flush=True)
+        server.queue_scheduler = start_queue_scheduler()
 
 
 class NoCacheHandler(SimpleHTTPRequestHandler):
@@ -236,4 +250,5 @@ except OSError as error:
 
 print(f"RedditAuth server ready at http://{HOST}:{PORT}/", flush=True)
 server.queue_scheduler = start_queue_scheduler()
+threading.Thread(target=monitor_queue_scheduler, args=(server,), daemon=True).start()
 server.serve_forever()
