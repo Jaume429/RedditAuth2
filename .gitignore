@@ -4,3 +4,4 @@ queue.json
 .env
 __pycache__/
 *.pyc
+debug-artifacts/

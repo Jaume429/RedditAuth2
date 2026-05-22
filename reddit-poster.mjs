@@ -1,10 +1,12 @@
 import { chromium } from 'playwright';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyRedditSession } from './reddit-session.mjs';
 
 const POST_COMMENT_TIMEOUT_MS = 120000;
 const DEBUG_REDDIT_POSTER = process.env.DEBUG_REDDIT_POSTER === '1';
+const DEBUG_ARTIFACTS_DIR = path.resolve(process.cwd(), 'debug-artifacts');
 
 function buildResult(success, postUrl, commentText, details = null) {
   return {
@@ -76,10 +78,14 @@ async function waitForRedditRender(page) {
 
 async function expandCommentEditor(page) {
   const placeholderSelectors = [
-    'text="Join the conversation"',
-    'div:has-text("Join the conversation")',
-    'button:has-text("Join the conversation")',
+    'shreddit-composer:has-text("Join the conversation")',
+    'shreddit-composer [placeholder*="Join the conversation" i]',
+    'shreddit-composer faceplate-textarea',
+    '[aria-label*="Join the conversation" i]',
     '[placeholder*="Join the conversation" i]',
+    'div[role="textbox"]:has-text("Join the conversation")',
+    'button:has-text("Join the conversation")',
+    'text="Join the conversation"',
     'text="Add a comment"',
   ];
 
@@ -89,6 +95,7 @@ async function expandCommentEditor(page) {
       try {
         await trigger.scrollIntoViewIfNeeded({ timeout: 5000 });
         await trigger.click({ timeout: 5000 });
+        await page.waitForTimeout(1500);
         return;
       } catch {
         continue;
@@ -100,7 +107,7 @@ async function expandCommentEditor(page) {
 }
 
 async function clickJoinButtonIfPresent(page) {
-  const joinButton = page.locator('button:has-text("Join")').first();
+  const joinButton = page.getByRole('button', { name: /^Join$/ }).first();
   if (!(await joinButton.count())) {
     return;
   }
@@ -148,8 +155,8 @@ async function logRestrictionNotices(page) {
 
 async function detectPostRestriction(page) {
   const restrictionChecks = [
-    { label: 'Locked post', selector: 'text=/locked post|post is locked|this post is locked/i' },
-    { label: 'Archived post', selector: 'text=/archived post|post is archived|this post is archived/i' },
+    { label: 'Locked post', selector: '[aria-live="polite"]:has-text("Locked post"), [role="alert"]:has-text("Locked post")' },
+    { label: 'Archived post', selector: '[aria-live="polite"]:has-text("Archived post"), [role="alert"]:has-text("Archived post")' },
   ];
 
   for (const check of restrictionChecks) {
@@ -164,22 +171,21 @@ async function detectPostRestriction(page) {
     }
   }
 
-  const bodyText = ((await page.locator('body').textContent().catch(() => null)) || '').toLowerCase();
-  if (bodyText.includes('locked post') || bodyText.includes('this post is locked') || bodyText.includes('post is locked')) {
-    return 'Locked post';
-  }
-  if (bodyText.includes('archived post') || bodyText.includes('this post is archived') || bodyText.includes('post is archived')) {
-    return 'Archived post';
-  }
-
   return null;
 }
 
 async function findCommentInput(page) {
   const inputSelectors = [
     'shreddit-composer [contenteditable="true"]',
+    'shreddit-composer [role="textbox"]',
+    'shreddit-composer [aria-label*="comment" i]',
+    'shreddit-composer [aria-placeholder*="Join the conversation" i]',
+    'shreddit-composer [data-lexical-editor="true"]',
+    '[data-testid="comment-submission-form-richtext"] [contenteditable="true"]',
+    '[data-testid="comment-submission-form-richtext"] [role="textbox"]',
     '[slot="rte-body"] [contenteditable="true"]',
     'div[contenteditable="true"][role="textbox"]',
+    '[contenteditable="true"]',
     'textarea[name="comment"]',
     'textarea[placeholder*="comment" i]',
     'shreddit-composer textarea',
@@ -189,19 +195,27 @@ async function findCommentInput(page) {
   await scrollToCommentSection(page);
   await expandCommentEditor(page);
 
-  for (const selector of inputSelectors) {
-    const locator = page.locator(selector).first();
-    if (await locator.count()) {
-      try {
-        await locator.waitFor({ state: 'visible', timeout: 10000 });
-        return locator;
-      } catch {
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    for (const selector of inputSelectors) {
+      const locator = page.locator(selector).first();
+      if (await locator.count()) {
+        try {
+          await locator.waitFor({ state: 'visible', timeout: 1500 });
+          return locator;
+        } catch {
+          if (DEBUG_REDDIT_POSTER) {
+            console.log(`Tried selector: ${selector} - not visible yet`);
+          }
+          continue;
+        }
+      } else if (DEBUG_REDDIT_POSTER) {
         console.log(`Tried selector: ${selector} - not found`);
-        continue;
       }
-    } else {
-      console.log(`Tried selector: ${selector} - not found`);
     }
+
+    await expandCommentEditor(page);
+    await page.waitForTimeout(750);
   }
 
   const restriction = await detectPostRestriction(page);
@@ -210,6 +224,19 @@ async function findCommentInput(page) {
   }
 
   throw new Error('Could not find the Reddit comment box on the page.');
+}
+
+async function saveFailureArtifacts(page, postUrl, reason) {
+  try {
+    await mkdir(DEBUG_ARTIFACTS_DIR, { recursive: true });
+    const safeName = `${Date.now()}-${new URL(postUrl).pathname.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}`;
+    const basePath = path.join(DEBUG_ARTIFACTS_DIR, safeName);
+    await page.screenshot({ path: `${basePath}.png`, fullPage: true });
+    await writeFile(`${basePath}.html`, await page.content(), 'utf8');
+    console.log(`Saved Reddit poster failure artifacts for ${reason}: ${basePath}.png`);
+  } catch (error) {
+    console.log(`Could not save Reddit poster failure artifacts: ${error.message}`);
+  }
 }
 
 async function typeLikeHuman(locator, commentText) {
@@ -381,6 +408,7 @@ export async function postComment(postUrl, commentText) {
     }
     return result;
   } catch (error) {
+    await saveFailureArtifacts(page, postUrl, error.message);
     const result = buildResult(false, postUrl, commentText, error.message);
     console.error(`[${result.timestamp}] failed ${result.postUrl} :: ${result.commentPreview}`);
     return result;
