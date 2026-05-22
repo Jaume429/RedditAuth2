@@ -200,6 +200,33 @@ async function confirmNoOldRedditError(page) {
   return { ok: true };
 }
 
+async function commentWasPosted(page, commentText) {
+  const snippet = commentText.trim().replace(/\s+/g, ' ').slice(0, 45);
+  const deadline = Date.now() + 10000;
+
+  while (Date.now() < deadline) {
+    const commentLocator = page.locator(`text=${JSON.stringify(snippet)}`);
+    if (await commentLocator.count()) {
+      return true;
+    }
+
+    const inputLocator = page.locator(
+      'textarea[name="text"], .usertext-edit textarea, [contenteditable="true"][role="textbox"], [contenteditable="true"][aria-label*="comment" i], [contenteditable="true"][placeholder*="comment" i]'
+    ).first();
+
+    if (await inputLocator.count()) {
+      const value = ((await inputLocator.inputValue().catch(() => '')) || '').trim() || ((await inputLocator.textContent().catch(() => '')) || '').trim();
+      if (!value) {
+        return true;
+      }
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  return false;
+}
+
 async function postWithOldReddit(page, postUrl, commentText) {
   const oldPostUrl = toOldRedditUrl(postUrl);
   console.log(`Trying old Reddit comment form: ${oldPostUrl}`);
@@ -219,6 +246,11 @@ async function postWithOldReddit(page, postUrl, commentText) {
   const confirmation = await confirmNoOldRedditError(page);
   if (!confirmation.ok) {
     return buildResult(false, postUrl, commentText, confirmation.details);
+  }
+
+  const posted = await commentWasPosted(page, commentText);
+  if (!posted) {
+    return buildResult(false, postUrl, commentText, 'Could not confirm the comment was posted on old Reddit.');
   }
 
   return buildResult(true, postUrl, commentText);
@@ -545,6 +577,11 @@ export async function postComment(postUrl, commentText) {
         const submitResult = await submitComment(page);
         if (!submitResult.clicked) {
           return buildResult(false, postUrl, commentText, 'No submit button found.');
+        }
+
+        const posted = await commentWasPosted(page, commentText);
+        if (!posted) {
+          return buildResult(false, postUrl, commentText, 'Could not confirm the comment was posted.');
         }
 
         return buildResult(true, postUrl, commentText);
