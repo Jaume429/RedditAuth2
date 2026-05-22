@@ -803,6 +803,7 @@ function updateNextPostCountdown() {
   const remainingMs = new Date(nextQueuePostAt).getTime() - Date.now();
   if (remainingMs <= 0) {
     els.nextPostCountdownValue.textContent = "00:00:00";
+    els.nextPostMeta.textContent = "Due now. Waiting for the queue processor.";
     return;
   }
 

@@ -25,6 +25,17 @@ PROXY_USER = "aaubcdkx"
 PROXY_PASS = "ecljgj60smyr"
 
 
+def start_queue_scheduler():
+    process = subprocess.Popen(
+        ["node", "reddit-queue.mjs", "schedule"],
+        cwd=str(ROOT),
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    print(f"Started Reddit queue scheduler with pid {process.pid}", flush=True)
+    return process
+
+
 class NoCacheHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/api/reddit"):
@@ -224,4 +235,5 @@ except OSError as error:
     raise SystemExit(1)
 
 print(f"RedditAuth server ready at http://{HOST}:{PORT}/", flush=True)
+server.queue_scheduler = start_queue_scheduler()
 server.serve_forever()
