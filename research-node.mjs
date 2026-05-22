@@ -111,6 +111,11 @@ function buildKnownPostUrlSet(postUrls = []) {
   return new Set(postUrls.filter(Boolean).map(normalizePostUrl));
 }
 
+function extractSubredditFromUrl(postUrl) {
+  const match = String(postUrl).match(/\/r\/([^/]+)/i);
+  return match?.[1] || 'unknown';
+}
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -393,6 +398,9 @@ function normalizeOpportunities(opportunities, knownPostUrls = []) {
   if (!Array.isArray(opportunities)) return [];
 
   const knownPostUrlSet = buildKnownPostUrlSet(knownPostUrls);
+  const subredditCount = {};
+  const MAX_POSTS_PER_SUBREDDIT = 2;
+
   return opportunities
     .filter((item) => item && (item.reddit_url || item.url) && item.title)
     .filter((item) => {
@@ -403,6 +411,19 @@ function normalizeOpportunities(opportunities, knownPostUrls = []) {
 
       log(`Skipping already known post: ${postUrl}`);
       return false;
+    })
+    .filter((item) => {
+      const postUrl = String(item.reddit_url || item.url || '');
+      const subreddit = extractSubredditFromUrl(postUrl).toLowerCase();
+      
+      subredditCount[subreddit] = (subredditCount[subreddit] || 0) + 1;
+      
+      if (subredditCount[subreddit] > MAX_POSTS_PER_SUBREDDIT) {
+        log(`Skipping post from r/${subreddit} - already have ${MAX_POSTS_PER_SUBREDDIT} from this subreddit today`);
+        return false;
+      }
+      
+      return true;
     })
     .map((item) => ({
       reddit_url: String(item.reddit_url || item.url || ""),

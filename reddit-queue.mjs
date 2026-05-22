@@ -156,13 +156,13 @@ function countPendingToday(queue) {
   return queue.filter((item) => item.status === 'pending' && isSameDay(item.scheduledAt)).length;
 }
 
-function postedTodayForSubreddit(queue, subreddit) {
-  return queue.some(
+function countPostedTodayForSubreddit(queue, subreddit) {
+  return queue.filter(
     (item) =>
       item.status === 'posted' &&
       item.subreddit.toLowerCase() === subreddit.toLowerCase() &&
       isSameDay(item.postedAt)
-  );
+  ).length;
 }
 
 function nextScheduleBase(queue) {
@@ -390,8 +390,11 @@ async function processQueue() {
       break;
     }
 
-    if (postedTodayForSubreddit(queue, item.subreddit)) {
-      log(`Skipping ${item.postUrl} because r/${item.subreddit} already has a post today`);
+    const MAX_POSTS_PER_SUBREDDIT_PER_DAY = 2;
+    const postedCountForSubreddit = countPostedTodayForSubreddit(queue, item.subreddit);
+    
+    if (postedCountForSubreddit >= MAX_POSTS_PER_SUBREDDIT_PER_DAY) {
+      log(`Skipping ${item.postUrl} because r/${item.subreddit} already has ${postedCountForSubreddit} post(s) today`);
       await markQueueItem(queue, item.id, 'failed');
       continue;
     }
@@ -425,6 +428,7 @@ async function processQueue() {
       if (result.success) {
         const postedAt = new Date().toISOString();
         await markQueueItem(queue, item.id, 'posted', postedAt);
+        await blockPostUrl(item.postUrl);
         postedToday += 1;
         log(`Posted successfully to r/${item.subreddit} at ${postedAt}`);
         continue;
