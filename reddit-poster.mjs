@@ -7,6 +7,8 @@ import { verifyRedditSession } from './reddit-session.mjs';
 const POST_COMMENT_TIMEOUT_MS = 120000;
 const DEBUG_REDDIT_POSTER = process.env.DEBUG_REDDIT_POSTER === '1';
 const DEBUG_ARTIFACTS_DIR = path.resolve(process.cwd(), 'debug-artifacts');
+const REDDIT_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 
 function buildResult(success, postUrl, commentText, details = null) {
   return {
@@ -74,6 +76,157 @@ async function waitForRedditRender(page) {
     ).catch(() => null),
     page.waitForTimeout(5000),
   ]);
+}
+
+function toOldRedditUrl(postUrl) {
+  const url = new URL(postUrl);
+  url.protocol = 'https:';
+  url.hostname = 'old.reddit.com';
+  return url.toString();
+}
+
+async function detectOldRedditRestriction(page) {
+  const restrictionChecks = [
+    { label: 'Locked post', selector: '.locked-infobar, .reddit-infobar:has-text("locked"), .error:has-text("locked")' },
+    { label: 'Archived post', selector: '.archived-infobar, .reddit-infobar:has-text("archived"), .error:has-text("archived")' },
+    { label: 'Login required', selector: 'form.login-form, a.login-required, .error:has-text("log in")' },
+    { label: 'Quarantined or unavailable post', selector: '.interstitial, .error:has-text("quarantined"), .error:has-text("unavailable")' },
+  ];
+
+  for (const check of restrictionChecks) {
+    const locator = page.locator(check.selector).first();
+    if (await locator.count().catch(() => 0)) {
+      try {
+        await locator.waitFor({ state: 'visible', timeout: 1000 });
+        return check.label;
+      } catch {
+        return check.label;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function findOldRedditCommentInput(page) {
+  const inputSelectors = [
+    'form.usertext textarea[name="text"]',
+    '.usertext-edit textarea[name="text"]',
+    'textarea[name="text"]',
+    'textarea',
+  ];
+
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    for (const selector of inputSelectors) {
+      const locator = page.locator(selector).first();
+      if (await locator.count()) {
+        try {
+          await locator.scrollIntoViewIfNeeded({ timeout: 3000 });
+          await locator.waitFor({ state: 'visible', timeout: 1500 });
+          return locator;
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  const restriction = await detectOldRedditRestriction(page);
+  if (restriction) {
+    throw new Error(`Could not find the old Reddit comment box on the page. ${restriction}`);
+  }
+
+  throw new Error('Could not find the old Reddit comment box on the page.');
+}
+
+async function submitOldRedditComment(page) {
+  const submitSelectors = [
+    'form.usertext button.save',
+    '.usertext-edit button.save',
+    'button.save:has-text("save")',
+    'button[type="submit"]:has-text("save")',
+    'input[type="submit"][value="save"]',
+  ];
+
+  for (const selector of submitSelectors) {
+    const button = page.locator(selector).first();
+    if (await button.count()) {
+      try {
+        await button.waitFor({ state: 'visible', timeout: 3000 });
+        console.log(`Old Reddit submit button found with selector: ${selector}`);
+        await button.click({ timeout: 5000, noWaitAfter: true });
+        await page.waitForTimeout(3000);
+        return { clicked: true, selector };
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return { clicked: false, selector: null };
+}
+
+async function confirmNoOldRedditError(page) {
+  await page.waitForTimeout(2500);
+
+  const errorSelectors = [
+    '.status.error',
+    '.error:has-text("try again")',
+    '.error:has-text("doing that too much")',
+    '.error:has-text("not allowed")',
+    '.error:has-text("log in")',
+    '.usertext .error',
+  ];
+
+  for (const selector of errorSelectors) {
+    const errorLocator = page.locator(selector).first();
+    if (await errorLocator.count()) {
+      try {
+        await errorLocator.waitFor({ state: 'visible', timeout: 1000 });
+        const text = ((await errorLocator.textContent().catch(() => null)) || '').trim();
+        return {
+          ok: false,
+          details: text ? `Old Reddit showed an error after submit: ${text}` : `Old Reddit showed an error after submit: ${selector}`,
+        };
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return { ok: true };
+}
+
+async function postWithOldReddit(page, postUrl, commentText) {
+  const oldPostUrl = toOldRedditUrl(postUrl);
+  console.log(`Trying old Reddit comment form: ${oldPostUrl}`);
+
+  await page.goto(oldPostUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => null);
+
+  const restriction = await detectOldRedditRestriction(page);
+  if (restriction) {
+    throw new Error(`Could not post via old Reddit. ${restriction}`);
+  }
+
+  const commentInput = await findOldRedditCommentInput(page);
+  await typeLikeHuman(commentInput, commentText);
+  await page.waitForTimeout(750);
+
+  const submitResult = await submitOldRedditComment(page);
+  if (!submitResult.clicked) {
+    return buildResult(false, postUrl, commentText, 'No old Reddit submit button found.');
+  }
+
+  const confirmation = await confirmNoOldRedditError(page);
+  if (!confirmation.ok) {
+    return buildResult(false, postUrl, commentText, confirmation.details);
+  }
+
+  return buildResult(true, postUrl, commentText);
 }
 
 async function expandCommentEditor(page) {
@@ -366,8 +519,7 @@ export async function postComment(postUrl, commentText) {
   const cookies = await readSessionCookies();
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    userAgent: REDDIT_USER_AGENT,
   });
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
@@ -377,6 +529,12 @@ export async function postComment(postUrl, commentText) {
     const result = await Promise.race([
       (async () => {
         await context.addCookies(cookies);
+        try {
+          return await postWithOldReddit(page, postUrl, commentText);
+        } catch (oldRedditError) {
+          console.log(`Old Reddit posting path failed: ${oldRedditError.message}`);
+        }
+
         await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await waitForRedditRender(page);
 
