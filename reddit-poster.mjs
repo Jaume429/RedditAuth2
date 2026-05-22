@@ -89,7 +89,7 @@ async function detectOldRedditRestriction(page) {
   const restrictionChecks = [
     { label: 'Locked post', selector: '.locked-infobar, .reddit-infobar:has-text("locked"), .error:has-text("locked")' },
     { label: 'Archived post', selector: '.archived-infobar, .reddit-infobar:has-text("archived"), .error:has-text("archived")' },
-    { label: 'Login required', selector: 'form.login-form, a.login-required, .error:has-text("log in")' },
+    { label: 'Login required', selector: 'a.login-required, .error:has-text("log in to leave a comment"), .error:has-text("you must log in")' },
     { label: 'Quarantined or unavailable post', selector: '.interstitial, .error:has-text("quarantined"), .error:has-text("unavailable")' },
   ];
 
@@ -206,11 +206,6 @@ async function postWithOldReddit(page, postUrl, commentText) {
 
   await page.goto(oldPostUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => null);
-
-  const restriction = await detectOldRedditRestriction(page);
-  if (restriction) {
-    throw new Error(`Could not post via old Reddit. ${restriction}`);
-  }
 
   const commentInput = await findOldRedditCommentInput(page);
   await typeLikeHuman(commentInput, commentText);
