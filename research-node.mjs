@@ -9,21 +9,27 @@ const SUBREDDITS = [
   "ChatGPT",
   "startups",
   "indiehackers",
+  "ClaudeCode",
+  "vibecoding",
+  "ClaudeAI",
 ];
 
 const SEARCH_QUERIES = [
   "how to build",
   "no code",
+  "Claude Code",
   "launch idea",
   "build without coding",
   "AI to build",
   "ship product",
   "no developer",
+  "debugging AI",
+  "prompting workflow",
 ];
 
 const LANDING_PAGE = "https://buildwithclaude.vercel.app";
 
-const SYSTEM_PROMPT = `You are a marketing agent specialized in finding ONLY THE MOST RELEVANT Reddit opportunities for a specific digital product. Your job is strict filtering - return FEWER posts if needed, but only those that are truly excellent matches.
+const SYSTEM_PROMPT = `You are a Reddit-native operator finding ONLY the most relevant reply opportunities for a specific digital product. Your job is strict filtering and writing useful comments that sound like they belong in the thread.
 
 PRODUCT:
 - Name: "From Idea to Shipped in 3 Days"
@@ -41,6 +47,9 @@ BONUS CRITERIA (prioritize posts matching these):
 - Mentions Claude Code, Cursor, Copilot, or other AI coding tools
 - Frustrated tone about technical limitations blocking their execution
 - Urgency signals: "ship fast", "launch soon", "side project", "startup idea"
+- The thread is early enough that a useful comment can still be seen
+- The post asks for a concrete workflow, debugging, prompting, shipping, validation, or first-product advice
+- Prefer r/ClaudeCode and r/vibecoding when the thread is specifically about Claude Code workflow, token/context limits, debugging, specs, or shipping with AI
 
 DISQUALIFY IF:
 - Post is from a developer/technical builder (even if interested in AI tools)
@@ -51,11 +60,14 @@ DISQUALIFY IF:
 - Strongly negative tone toward AI
 - OP is complaining about a tool not working or asking for specific no-code tool recommendations instead of asking how to build/launch
 - OP is comparing tools or asking "what's better: X or Y tool" - these are not our posts
+- The only possible reply would be a vague encouragement or a generic "I wrote this down" link drop
+- The post is mainly a showcase and does not ask for feedback, advice, users, or next steps
 
 STRICT FILTERING:
 - If a post only PARTIALLY matches must-have criteria, DISCARD IT
 - If you find fewer than 5 genuinely excellent posts, return only those few (do NOT pad with weak matches)
 - Better to return 2 perfect posts than 8 mediocre ones
+- Prefer one high-fit, high-specificity comment over four generic comments
 
 OUTPUT FORMAT (MANDATORY):
 Return ONLY a JSON array. No markdown, no explanations, no extra text before or after. All fields are required.
@@ -65,7 +77,7 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
     "reddit_url": "https://reddit.com/r/...",
     "title": "exact post title",
     "reason": "1-2 sentences explaining why this post is an excellent fit (be specific about which criteria it matches)",
-    "reply": "Read the post carefully and identify THE SPECIFIC question or pain point the OP is asking about. Then respond DIRECTLY to that question - nothing else. Rules: (1) Answer their exact question/problem, not a related topic. (2) Maximum 3 sentences total, no exceptions. (3) NO exclamation marks. (4) NO filler phrases like 'That's powerful' or 'I found this helpful'. (5) Sound like a real person sharing one specific thing they experienced, not a marketer. (6) The link comes last as an afterthought, directly related to what you just said. (7) Use 'put something together' or 'wrote it down' instead of 'guide'. (8) Casual, direct tone. (9) VARY THE ENDING EVERY TIME - never use the same closing phrase twice. Vary how you introduce the link: sometimes use 'Here's', sometimes 'Check', sometimes 'I wrote this down', sometimes just reference it naturally. Make each comment sound unique even if the link is the same. Example openers: 'Spent 6 months...', 'Did the exact same thing...', 'Ran into this problem...', 'Yeah that was my issue too...'",
+    "reply": "Write a Reddit-native comment that would still be useful if the link were removed. Rules: (1) Answer the exact question/pain point in the post, not a nearby topic. (2) 1-2 short paragraphs, maximum 65 words total. (3) Start with the useful insight, not empathy filler. (4) Include one concrete tactic, example, or decision rule. (5) Use lowercase/casual style when it fits the subreddit, especially ClaudeCode/vibecoding. (6) No exclamation marks. (7) Do NOT use these phrases: 'I wrote this down', 'if helpful', 'if it helps', 'I put together', 'guide', 'check it out', 'here is what I learned', 'getting a product out fast'. (8) Do not claim personal experience unless it naturally matches the post. (9) Add the link only as a soft afterthought in the final sentence, using Reddit Markdown link text like '[more detail here](${LANDING_PAGE})' or '[this is the workflow](${LANDING_PAGE})'. Do not paste the raw URL. (10) Never make the link sentence longer than the useful advice.",
     "risk": "none | sensitive | saturated | other"
   }
 ]`;
@@ -82,7 +94,7 @@ const PROXY_URLS = [
   'http://aaubcdkx-be-9:ecljgj60smyr@p.webshare.io:80',
   'http://aaubcdkx-at-10:ecljgj60smyr@p.webshare.io:80',
 ];
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyAfKQOjTD1Q95tbvRJq6w3eAUMaFX_5pNs";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
 const MAX_PROXY_ATTEMPTS = 10;
 const PROXY_RETRY_DELAY_MS = 3000;
@@ -310,6 +322,12 @@ function shortlistPosts(posts) {
     "copilot",
     "developer",
     "technical cofounder",
+    "token limit",
+    "context",
+    "debugging",
+    "prompting",
+    "spec",
+    "workflow",
   ];
 
   return posts
@@ -320,7 +338,9 @@ function shortlistPosts(posts) {
         0
       );
       const engagementScore = Math.min(post.comments, 25) + Math.min(post.score, 40) / 4;
-      return { ...post, local_score: keywordScore + engagementScore };
+      const subredditScore = ["claudecode", "vibecoding"].includes(String(post.subreddit).toLowerCase()) ? 18 : 0;
+      const lowFitPenalty = /\b(showcase|built a|launched|roast my|look what i made)\b/i.test(text) ? 12 : 0;
+      return { ...post, local_score: keywordScore + engagementScore + subredditScore - lowFitPenalty };
     })
     .sort((a, b) => b.local_score - a.local_score)
     .slice(0, 35);
@@ -336,6 +356,10 @@ function stripMarkdownFence(text) {
 
 async function analyzeWithGemini(posts, knownPostUrls = []) {
   try {
+    if (!GEMINI_API_KEY) {
+      throw new Error("Gemini API key missing. Set GEMINI_API_KEY in the Railway environment.");
+    }
+
     const knownUrls = [...new Set(knownPostUrls.filter(Boolean).map(String))];
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
     const response = await fetch(`${endpoint}?key=${encodeURIComponent(GEMINI_API_KEY)}`, {
@@ -376,6 +400,11 @@ ${JSON.stringify(posts, null, 2)}`,
 
     if (!response.ok) {
       const detail = await response.text();
+      if (response.status === 403 && /reported as leaked|PERMISSION_DENIED/i.test(detail)) {
+        throw new Error(
+          "Gemini API key was rejected as leaked. Rotate the key in Google AI Studio and update GEMINI_API_KEY in Railway."
+        );
+      }
       throw new Error(`Gemini request failed: ${response.status}. ${detail.slice(0, 220)}`);
     }
 
