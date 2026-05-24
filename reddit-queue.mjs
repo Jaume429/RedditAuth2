@@ -152,8 +152,10 @@ function countPostedToday(queue) {
   return queue.filter((item) => item.status === 'posted' && isSameDay(item.postedAt)).length;
 }
 
-function countPendingToday(queue) {
-  return queue.filter((item) => item.status === 'pending' && isSameDay(item.scheduledAt)).length;
+function countActiveToday(queue) {
+  return queue.filter(
+    (item) => ['pending', 'posted'].includes(item.status) && isSameDay(item.scheduledAt)
+  ).length;
 }
 
 function countPostedTodayForSubreddit(queue, subreddit) {
@@ -499,24 +501,14 @@ async function syncQueueToRailway() {
   log(`Finished syncing ${pendingItems.length} items to Railway`);
 }
 
-export async function runDailyJob() {
-  log('Starting daily Reddit automation job');
-  
-  // Sync any existing local queue items to Railway before clearing the daily work queue.
-  await syncQueueToRailway();
-  
-  await writeQueue([]);
-  log('Cleared all queue items. Starting fresh.');
-  
-  // Run research up to 5 times, with 30-second delays, until we have 4 pending items for today
+async function fillDailyQueue(maxAttempts = 5) {
   try {
-    const MAX_RESEARCH_ATTEMPTS = 5;
     let attempt = 0;
-    let pendingCount = countPendingToday(await readQueue());
+    let activeCount = countActiveToday(await readQueue());
     
-    while (attempt < MAX_RESEARCH_ATTEMPTS && pendingCount < MAX_POSTS_PER_DAY) {
+    while (attempt < maxAttempts && activeCount < MAX_POSTS_PER_DAY) {
       attempt += 1;
-      log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS}`);
+      log(`Research attempt ${attempt}/${maxAttempts}`);
       
       const queueBeforeResearch = await readQueue();
       const blockedPostUrls = await readBlockedPosts();
@@ -525,7 +517,7 @@ export async function runDailyJob() {
       log(`Selected ${opportunities.length} opportunities from research`);
       
       for (const opportunity of opportunities) {
-        if (pendingCount >= MAX_POSTS_PER_DAY) {
+        if (activeCount >= MAX_POSTS_PER_DAY) {
           log(`Queue limit reached (${MAX_POSTS_PER_DAY}). Not adding more opportunities today.`);
           break;
         }
@@ -555,7 +547,7 @@ export async function runDailyJob() {
 
           const result = await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit);
           if (result.success) {
-            pendingCount = countPendingToday(await readQueue());
+            activeCount = countActiveToday(await readQueue());
           }
         } catch (error) {
           log(`Could not queue an opportunity: ${error.message}`);
@@ -563,21 +555,40 @@ export async function runDailyJob() {
       }
       
       const queue = await readQueue();
-      pendingCount = countPendingToday(queue);
-      log(`Current pending items for today: ${pendingCount}`);
+      activeCount = countActiveToday(queue);
+      log(`Current active items for today: ${activeCount}`);
       
-      if (pendingCount < MAX_POSTS_PER_DAY && attempt < MAX_RESEARCH_ATTEMPTS) {
-        log(`Only ${pendingCount} pending items (need ${MAX_POSTS_PER_DAY}). Retrying in 30 seconds...`);
+      if (activeCount < MAX_POSTS_PER_DAY && attempt < maxAttempts) {
+        log(`Only ${activeCount} active items (need ${MAX_POSTS_PER_DAY}). Retrying in 30 seconds...`);
         await sleep(30000);
       }
     }
   } catch (err) {
-    log(`Research phase failed: ${err.message}. Continuing to posting phase...`);
+    log(`Research phase failed: ${err.message}. Continuing...`);
   }
+}
+
+export async function runDailyJob() {
+  log('Starting daily Reddit automation job');
+  
+  // Sync any existing local queue items to Railway before clearing the daily work queue.
+  await syncQueueToRailway();
+  
+  await writeQueue([]);
+  log('Cleared all queue items. Starting fresh.');
+  
+  // Fill the day before posting, then refill if an immediate post fails.
+  await fillDailyQueue(5);
   
   const currentQueue = await processQueue();
+
+  if (countActiveToday(currentQueue) < MAX_POSTS_PER_DAY) {
+    log(`Daily queue has ${countActiveToday(currentQueue)} active item(s) after posting. Looking for replacements...`);
+    await fillDailyQueue(2);
+  }
+
   log('Daily Reddit automation job finished');
-  return currentQueue;
+  return readQueue();
 }
 
 function scheduleDailyJob() {
