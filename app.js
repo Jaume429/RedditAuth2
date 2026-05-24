@@ -12,13 +12,16 @@ const SUBREDDITS = [
   "Entrepreneur",
   "artificial",
   "ChatGPT",
-  "startups",
   "indiehackers",
   "passive_income",
   "ClaudeCode",
   "vibecoding",
   "ClaudeAI",
 ];
+
+const BLOCKED_SUBREDDITS = new Set([
+  "startups",
+]);
 
 const SEARCH_QUERIES = [
   "how to build",
@@ -293,6 +296,11 @@ async function fetchRecentRedditPosts() {
 
   for (let index = 0; index < SUBREDDITS.length; index += 1) {
     const subreddit = SUBREDDITS[index];
+    if (BLOCKED_SUBREDDITS.has(subreddit.toLowerCase())) {
+      updateStatus(`Skipping blocked subreddit r/${subreddit}...`);
+      continue;
+    }
+
     const query = SEARCH_QUERIES[(scanCount + index) % SEARCH_QUERIES.length];
     updateStatus(`Fetching r/${subreddit} for "${query}"...`);
 

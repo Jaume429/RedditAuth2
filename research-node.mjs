@@ -7,12 +7,15 @@ const SUBREDDITS = [
   "Entrepreneur",
   "artificial",
   "ChatGPT",
-  "startups",
   "indiehackers",
   "ClaudeCode",
   "vibecoding",
   "ClaudeAI",
 ];
+
+const BLOCKED_SUBREDDITS = new Set([
+  "startups",
+]);
 
 const SEARCH_QUERIES = [
   "how to build",
@@ -128,6 +131,10 @@ function extractSubredditFromUrl(postUrl) {
   return match?.[1] || 'unknown';
 }
 
+function isBlockedSubreddit(subreddit) {
+  return BLOCKED_SUBREDDITS.has(String(subreddit || '').toLowerCase());
+}
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -241,6 +248,11 @@ async function fetchRedditPosts() {
 
   for (let i = 0; i < SUBREDDITS.length; i++) {
     const subreddit = SUBREDDITS[i];
+    if (isBlockedSubreddit(subreddit)) {
+      log(`Skipping blocked subreddit r/${subreddit}`);
+      continue;
+    }
+
     const query = SEARCH_QUERIES[i % SEARCH_QUERIES.length];
     
     try {
@@ -444,6 +456,10 @@ function normalizeOpportunities(opportunities, knownPostUrls = []) {
     .filter((item) => {
       const postUrl = String(item.reddit_url || item.url || '');
       const subreddit = extractSubredditFromUrl(postUrl).toLowerCase();
+      if (isBlockedSubreddit(subreddit)) {
+        log(`Skipping post from blocked subreddit r/${subreddit}: ${postUrl}`);
+        return false;
+      }
       
       subredditCount[subreddit] = (subredditCount[subreddit] || 0) + 1;
       

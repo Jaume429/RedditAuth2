@@ -15,6 +15,9 @@ const MAX_POSTS_PER_DAY = 4;
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
 const DAILY_JOB_HOUR_UTC = 7;
 const QUEUE_PROCESS_INTERVAL_MS = 10 * 60 * 1000;
+const BLOCKED_SUBREDDITS = new Set([
+  'startups',
+]);
 let queueProcessorRunning = false;
 
 function log(message) {
@@ -53,6 +56,10 @@ function isTodayUtcDate(isoTimestamp) {
 function extractSubreddit(postUrl) {
   const match = String(postUrl).match(/\/r\/([^/]+)/i);
   return match?.[1] || 'unknown';
+}
+
+function isBlockedSubreddit(subreddit) {
+  return BLOCKED_SUBREDDITS.has(String(subreddit || '').toLowerCase());
 }
 
 function normalizeQueue(queue) {
@@ -309,6 +316,11 @@ export async function addToQueue(postUrl, commentText, subreddit) {
     throw new Error('postUrl, commentText, and subreddit are required.');
   }
 
+  if (isBlockedSubreddit(subreddit)) {
+    log(`Skipping blocked subreddit r/${subreddit}: ${postUrl}`);
+    return { success: false, postUrl, subreddit, blockedSubreddit: true };
+  }
+
   if (await isBlockedPostUrl(postUrl)) {
     return { success: false, postUrl, subreddit, blocked: true };
   }
@@ -393,6 +405,12 @@ async function processQueue() {
     }
 
     const MAX_POSTS_PER_SUBREDDIT_PER_DAY = 2;
+    if (isBlockedSubreddit(item.subreddit)) {
+      log(`Skipping ${item.postUrl} because r/${item.subreddit} is blocked`);
+      await markQueueItem(queue, item.id, 'failed');
+      continue;
+    }
+
     const postedCountForSubreddit = countPostedTodayForSubreddit(queue, item.subreddit);
     
     if (postedCountForSubreddit >= MAX_POSTS_PER_SUBREDDIT_PER_DAY) {
@@ -524,6 +542,11 @@ async function fillDailyQueue(maxAttempts = 5) {
 
         try {
           const postUrl = opportunity.reddit_url || opportunity.url;
+          if (isBlockedSubreddit(extractSubreddit(postUrl))) {
+            log(`Skipping opportunity from blocked subreddit: ${postUrl}`);
+            continue;
+          }
+
           if (await isBlockedPostUrl(postUrl)) {
             continue;
           }
