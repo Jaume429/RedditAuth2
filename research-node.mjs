@@ -323,7 +323,8 @@ async function fetchRedditPosts(learning = {}) {
       });
 
       if (!response.ok) {
-        log(`Reddit fetch failed for r/${subreddit}: ${response.status}`);
+        log(`Reddit fetch failed for r/${subreddit}: ${response.status}. Waiting before retry...`);
+        await delay(6000);
         continue;
       }
 
@@ -358,10 +359,11 @@ async function fetchRedditPosts(learning = {}) {
       }
 
       if (i < subreddits.length - 1) {
-        await delay(1000);
+        await delay(4500);
       }
     } catch (error) {
       log(`Error fetching r/${subreddit}: ${error.message}`);
+      await delay(6000);
     }
   }
 
@@ -584,7 +586,7 @@ export async function runResearch(options = {}) {
     const knownPostUrls = Array.isArray(options.knownPostUrls) ? options.knownPostUrls : [];
     const learning = normalizeLearning(options.learning);
     const TARGET_OPPORTUNITIES = 4;
-    const MAX_RESEARCH_ATTEMPTS = 5;
+    const MAX_RESEARCH_ATTEMPTS = 12;
     let allOpportunities = [];
     let attempt = 0;
 
@@ -606,7 +608,7 @@ export async function runResearch(options = {}) {
       if (!posts.length) {
         log("No posts found in this attempt");
         if (attempt < MAX_RESEARCH_ATTEMPTS) {
-          await delay(2000);
+          await delay(5000);
         }
         continue;
       }
@@ -617,7 +619,7 @@ export async function runResearch(options = {}) {
       if (!shortlisted.length) {
         log("No posts passed shortlist filtering in this attempt");
         if (attempt < MAX_RESEARCH_ATTEMPTS) {
-          await delay(2000);
+          await delay(5000);
         }
         continue;
       }
@@ -635,7 +637,7 @@ export async function runResearch(options = {}) {
 
       if (attempt < MAX_RESEARCH_ATTEMPTS) {
         log(`Need more opportunities, waiting before retry...`);
-        await delay(3000);
+        await delay(5000);
       }
     }
 
