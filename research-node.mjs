@@ -99,6 +99,7 @@ const PROXY_URLS = [
 ];
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
+const REDDIT_TOP_TIME_RANGE = "week";
 const MAX_PROXY_ATTEMPTS = 10;
 const PROXY_RETRY_DELAY_MS = 3000;
 const DATACENTER_IP_PREFIXES = ['34.', '35.', '52.', '54.', '18.', '3.', '44.'];
@@ -302,6 +303,32 @@ async function fetchRedditPosts(learning = {}) {
   const seen = new Set();
   const subreddits = rankedSubredditsFromLearning(learning);
 
+  const addPost = (post, now) => {
+    const createdMs = (post.created_utc || 0) * 1000;
+
+    if (now - createdMs > MAX_POST_AGE_MS) {
+      return;
+    }
+
+    if (!post.permalink || seen.has(post.id)) {
+      return;
+    }
+
+    seen.add(post.id);
+    const url = `https://reddit.com${post.permalink}`;
+
+    posts.push({
+      id: post.id,
+      subreddit: post.subreddit,
+      title: post.title || "",
+      url,
+      selftext: (post.selftext || "").slice(0, 1800),
+      score: post.score || 0,
+      comments: post.num_comments || 0,
+      created_utc: post.created_utc,
+    });
+  };
+
   for (let i = 0; i < subreddits.length; i++) {
     const subreddit = subreddits[i];
     if (isBlockedSubreddit(subreddit)) {
@@ -314,48 +341,33 @@ async function fetchRedditPosts(learning = {}) {
     try {
       log(`Fetching r/${subreddit} for "${query}"...`);
       
-      const url = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=25&t=day&restrict_sr=1`;
-      const response = await fetchTextViaProxy(url, activeProxyUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-        timeout: 15000
-      });
+      const urls = [
+        `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=25&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
+        `https://www.reddit.com/r/${subreddit}/top.json?limit=25&t=${REDDIT_TOP_TIME_RANGE}`,
+      ];
 
-      if (!response.ok) {
-        log(`Reddit fetch failed for r/${subreddit}: ${response.status}. Waiting before retry...`);
-        await delay(6000);
-        continue;
-      }
-
-      const data = await response.json();
-      const now = Date.now();
-
-      for (const child of data.data?.children || []) {
-        const post = child.data;
-        const createdMs = (post.created_utc || 0) * 1000;
-
-        if (now - createdMs > MAX_POST_AGE_MS) {
-          continue;
-        }
-
-        if (!post.permalink || seen.has(post.id)) {
-          continue;
-        }
-
-        seen.add(post.id);
-        const url = `https://reddit.com${post.permalink}`;
-        
-        posts.push({
-          id: post.id,
-          subreddit: post.subreddit,
-          title: post.title || "",
-          url,
-          selftext: (post.selftext || "").slice(0, 1800),
-          score: post.score || 0,
-          comments: post.num_comments || 0,
-          created_utc: post.created_utc,
+      for (const url of urls) {
+        const response = await fetchTextViaProxy(url, activeProxyUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          },
+          timeout: 15000
         });
+
+        if (!response.ok) {
+          log(`Reddit fetch failed for r/${subreddit}: ${response.status}. Waiting before retry...`);
+          await delay(6000);
+          continue;
+        }
+
+        const data = await response.json();
+        const now = Date.now();
+
+        for (const child of data.data?.children || []) {
+          addPost(child.data, now);
+        }
+
+        await delay(1500);
       }
 
       if (i < subreddits.length - 1) {
@@ -412,6 +424,14 @@ function shortlistPosts(posts, learning = {}) {
 
   const MIN_COMMENTS = 40;
   const MIN_UPVOTES = 70;
+  const belowCommentThreshold = posts.filter((post) => post.comments < MIN_COMMENTS).length;
+  const belowUpvoteThreshold = posts.filter((post) => post.score < MIN_UPVOTES).length;
+  const maxComments = Math.max(0, ...posts.map((post) => post.comments || 0));
+  const maxScore = Math.max(0, ...posts.map((post) => post.score || 0));
+
+  log(
+    `Shortlist thresholds: need ${MIN_COMMENTS}+ comments and ${MIN_UPVOTES}+ upvotes; max seen ${maxComments} comments / ${maxScore} upvotes; below comments ${belowCommentThreshold}/${posts.length}, below upvotes ${belowUpvoteThreshold}/${posts.length}`
+  );
 
   return posts
     .filter((post) => {
@@ -603,7 +623,7 @@ export async function runResearch(options = {}) {
       log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS} (have ${allOpportunities.length}/${TARGET_OPPORTUNITIES} opportunities)`);
       
       const posts = await fetchRedditPosts(learning);
-      log(`Fetched ${posts.length} recent posts`);
+      log(`Fetched ${posts.length} top/relevant recent posts`);
       
       if (!posts.length) {
         log("No posts found in this attempt");
