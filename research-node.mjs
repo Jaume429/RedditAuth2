@@ -314,7 +314,7 @@ async function fetchRedditPosts(learning = {}) {
     try {
       log(`Fetching r/${subreddit} for "${query}"...`);
       
-      const url = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`;
+      const url = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=25&t=day&restrict_sr=1`;
       const response = await fetchTextViaProxy(url, activeProxyUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
