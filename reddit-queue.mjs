@@ -8,6 +8,8 @@ import { runResearch } from './research-node.mjs';
 
 const QUEUE_FILE = path.resolve(process.cwd(), 'queue.json');
 const BLOCKED_POSTS_FILE = path.resolve(process.cwd(), 'blocked-posts.json');
+const ANALYTICS_FILE = path.resolve(process.cwd(), 'reddit-analytics.json');
+const LEARNING_FILE = path.resolve(process.cwd(), 'reddit-learning.json');
 const PROXY_URL = 'http://aaubcdkx-es-8:ecljgj60smyr@p.webshare.io:80';
 const MIN_DELAY_MS = 2 * 60 * 60 * 1000;
 const MAX_DELAY_MS = 3 * 60 * 60 * 1000;
@@ -15,6 +17,11 @@ const MAX_POSTS_PER_DAY = 4;
 const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
 const DAILY_JOB_HOUR_UTC = 7;
 const QUEUE_PROCESS_INTERVAL_MS = 10 * 60 * 1000;
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const METRIC_REFRESH_WINDOWS = [
+  { label: '24h', ageMs: 24 * 60 * 60 * 1000 },
+  { label: '48h', ageMs: 48 * 60 * 60 * 1000 },
+];
 const BLOCKED_SUBREDDITS = new Set([
   'startups',
 ]);
@@ -70,6 +77,13 @@ function normalizeBlockedPosts(blockedPosts) {
   return Array.isArray(blockedPosts) ? blockedPosts : [];
 }
 
+function normalizeAnalytics(analytics) {
+  return {
+    publications: Array.isArray(analytics?.publications) ? analytics.publications : [],
+    lastWeeklyAnalysisAt: analytics?.lastWeeklyAnalysisAt || null,
+  };
+}
+
 function normalizePostUrl(postUrl) {
   try {
     const url = new URL(String(postUrl));
@@ -116,6 +130,38 @@ async function writeBlockedPosts(blockedPosts) {
   await writeFile(BLOCKED_POSTS_FILE, JSON.stringify(blockedPosts, null, 2), 'utf8');
 }
 
+async function readAnalytics() {
+  try {
+    const raw = await readFile(ANALYTICS_FILE, 'utf8');
+    return normalizeAnalytics(JSON.parse(raw));
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return normalizeAnalytics({});
+    }
+    throw error;
+  }
+}
+
+async function writeAnalytics(analytics) {
+  await writeFile(ANALYTICS_FILE, JSON.stringify(normalizeAnalytics(analytics), null, 2), 'utf8');
+}
+
+async function readLearning() {
+  try {
+    const raw = await readFile(LEARNING_FILE, 'utf8');
+    return JSON.parse(raw);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function writeLearning(learning) {
+  await writeFile(LEARNING_FILE, JSON.stringify(learning, null, 2), 'utf8');
+}
+
 async function isBlockedPostUrl(postUrl) {
   const blockedPosts = await readBlockedPosts();
   const normalizedPostUrl = normalizePostUrl(postUrl);
@@ -143,12 +189,14 @@ async function blockPostUrl(postUrl) {
   log(`Marked post as permanently blocked: ${postUrl}`);
 }
 
-function buildQueueItem(postUrl, commentText, subreddit, scheduledAt) {
+function buildQueueItem(postUrl, commentText, subreddit, scheduledAt, context = {}) {
   return {
     id: `queue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     postUrl,
     commentText,
     subreddit,
+    title: context.title || '',
+    opportunityReason: context.reason || '',
     status: 'pending',
     scheduledAt,
     postedAt: null,
@@ -285,7 +333,235 @@ async function fetchPostMetadata(postUrl) {
     title: postData.title || '',
     locked: Boolean(postData.locked),
     archived: Boolean(postData.archived),
+    score: Number(postData.score || 0),
+    comments: Number(postData.num_comments || 0),
+    awards: Number(postData.total_awards_received || 0),
+    views: Number.isFinite(Number(postData.view_count)) ? Number(postData.view_count) : null,
+    upvoteRatio: Number.isFinite(Number(postData.upvote_ratio)) ? Number(postData.upvote_ratio) : null,
   };
+}
+
+function buildMetricsSnapshot(metadata, label = 'posted') {
+  return {
+    label,
+    capturedAt: new Date().toISOString(),
+    score: Number(metadata?.score || 0),
+    comments: Number(metadata?.comments || 0),
+    awards: Number(metadata?.awards || 0),
+    views: metadata?.views ?? null,
+    upvoteRatio: metadata?.upvoteRatio ?? null,
+  };
+}
+
+function engagementValue(snapshot) {
+  return Number(snapshot?.score || 0) + Number(snapshot?.comments || 0) * 2 + Number(snapshot?.awards || 0) * 5;
+}
+
+async function recordPublication(item, status, options = {}) {
+  const analytics = await readAnalytics();
+  const postedAt = options.postedAt || null;
+  const existingIndex = analytics.publications.findIndex(
+    (publication) => publication.queueId === item.id || normalizePostUrl(publication.postUrl) === normalizePostUrl(item.postUrl)
+  );
+  const existing = existingIndex >= 0 ? analytics.publications[existingIndex] : null;
+  const snapshots = Array.isArray(existing?.metricsSnapshots) ? existing.metricsSnapshots : [];
+
+  if (options.metadata && !snapshots.some((snapshot) => snapshot.label === 'posted')) {
+    snapshots.push(buildMetricsSnapshot(options.metadata, 'posted'));
+  }
+
+  const publication = {
+    ...(existing || {}),
+    queueId: item.id,
+    postUrl: item.postUrl,
+    subreddit: item.subreddit,
+    title: options.metadata?.title || existing?.title || item.title || '',
+    opportunityReason: item.opportunityReason || existing?.opportunityReason || '',
+    commentText: item.commentText,
+    scheduledAt: item.scheduledAt || existing?.scheduledAt || null,
+    postedAt: postedAt || existing?.postedAt || null,
+    status,
+    finalStateAt: new Date().toISOString(),
+    failureDetails: status === 'failed' ? options.failureDetails || existing?.failureDetails || null : null,
+    metricsSnapshots: snapshots,
+  };
+
+  if (existingIndex >= 0) {
+    analytics.publications[existingIndex] = publication;
+  } else {
+    analytics.publications.push(publication);
+  }
+
+  await writeAnalytics(analytics);
+}
+
+function tokenize(text) {
+  const stopWords = new Set([
+    'about', 'after', 'again', 'also', 'and', 'any', 'are', 'build', 'but', 'can', 'cant', 'code',
+    'coding', 'for', 'from', 'get', 'have', 'how', 'into', 'just', 'like', 'need', 'not', 'now',
+    'that', 'the', 'this', 'use', 'using', 'what', 'when', 'with', 'without', 'you', 'your',
+  ]);
+
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length >= 4 && !stopWords.has(word));
+}
+
+function latestSnapshot(publication) {
+  const snapshots = Array.isArray(publication.metricsSnapshots) ? publication.metricsSnapshots : [];
+  return snapshots[snapshots.length - 1] || null;
+}
+
+async function refreshTrackedMetrics() {
+  const analytics = await readAnalytics();
+  let changed = false;
+
+  for (const publication of analytics.publications) {
+    if (publication.status !== 'posted' || !publication.postedAt) {
+      continue;
+    }
+
+    const postedTime = new Date(publication.postedAt).getTime();
+    if (!Number.isFinite(postedTime)) {
+      continue;
+    }
+
+    const snapshots = Array.isArray(publication.metricsSnapshots) ? publication.metricsSnapshots : [];
+    for (const window of METRIC_REFRESH_WINDOWS) {
+      if (snapshots.some((snapshot) => snapshot.label === window.label)) {
+        continue;
+      }
+
+      if (Date.now() - postedTime < window.ageMs) {
+        continue;
+      }
+
+      try {
+        const metadata = await fetchPostMetadata(publication.postUrl);
+        snapshots.push(buildMetricsSnapshot(metadata, window.label));
+        publication.metricsSnapshots = snapshots;
+        publication.title = publication.title || metadata.title || '';
+        publication.lastMetricsRefreshAt = new Date().toISOString();
+        changed = true;
+        log(`Captured ${window.label} metrics for ${publication.postUrl}`);
+      } catch (error) {
+        log(`Could not refresh ${window.label} metrics for ${publication.postUrl}: ${error.message}`);
+      }
+    }
+  }
+
+  if (changed) {
+    await writeAnalytics(analytics);
+  }
+
+  return analytics;
+}
+
+function buildWeeklyLearning(analytics) {
+  const cutoff = Date.now() - WEEK_MS;
+  const publications = analytics.publications.filter((publication) => {
+    if (publication.status !== 'posted' || !publication.postedAt) return false;
+    const postedTime = new Date(publication.postedAt).getTime();
+    return Number.isFinite(postedTime) && postedTime >= cutoff;
+  });
+
+  const subredditStats = new Map();
+  const hourStats = new Map();
+  const termStats = new Map();
+  const toneStats = {
+    shortComments: { count: 0, engagement: 0 },
+    linkAsAfterthought: { count: 0, engagement: 0 },
+    questionComments: { count: 0, engagement: 0 },
+  };
+
+  for (const publication of publications) {
+    const snapshot = latestSnapshot(publication);
+    const engagement = engagementValue(snapshot);
+    const subreddit = String(publication.subreddit || 'unknown').toLowerCase();
+    const subredditStat = subredditStats.get(subreddit) || { subreddit, posts: 0, totalEngagement: 0 };
+    subredditStat.posts += 1;
+    subredditStat.totalEngagement += engagement;
+    subredditStats.set(subreddit, subredditStat);
+
+    const hour = new Date(publication.postedAt).getUTCHours();
+    const hourStat = hourStats.get(hour) || { hourUtc: hour, posts: 0, totalEngagement: 0 };
+    hourStat.posts += 1;
+    hourStat.totalEngagement += engagement;
+    hourStats.set(hour, hourStat);
+
+    for (const term of tokenize(`${publication.title} ${publication.opportunityReason || ''}`)) {
+      const termStat = termStats.get(term) || { term, posts: 0, totalEngagement: 0 };
+      termStat.posts += 1;
+      termStat.totalEngagement += engagement;
+      termStats.set(term, termStat);
+    }
+
+    const commentText = String(publication.commentText || '');
+    const wordCount = commentText.trim().split(/\s+/).filter(Boolean).length;
+    const toneKeys = [
+      wordCount <= 55 ? 'shortComments' : null,
+      /\[[^\]]+\]\(https?:\/\//.test(commentText) && commentText.lastIndexOf('[') > commentText.length * 0.45 ? 'linkAsAfterthought' : null,
+      commentText.includes('?') ? 'questionComments' : null,
+    ].filter(Boolean);
+
+    for (const key of toneKeys) {
+      toneStats[key].count += 1;
+      toneStats[key].engagement += engagement;
+    }
+  }
+
+  const rank = (items) => items
+    .map((item) => ({
+      ...item,
+      avgEngagement: item.posts ? Number((item.totalEngagement / item.posts).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => b.avgEngagement - a.avgEngagement || b.posts - a.posts);
+
+  const topSubreddits = rank([...subredditStats.values()]).slice(0, 5);
+  const productiveHoursUtc = rank([...hourStats.values()]).slice(0, 5);
+  const effectiveTerms = rank([...termStats.values()])
+    .filter((item) => item.posts >= 1)
+    .slice(0, 12);
+  const effectiveTones = Object.entries(toneStats)
+    .map(([tone, stat]) => ({
+      tone,
+      posts: stat.count,
+      avgEngagement: stat.count ? Number((stat.engagement / stat.count).toFixed(2)) : 0,
+    }))
+    .filter((item) => item.posts > 0)
+    .sort((a, b) => b.avgEngagement - a.avgEngagement);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    windowDays: 7,
+    sampleSize: publications.length,
+    topSubreddits,
+    productiveHoursUtc,
+    effectiveTerms,
+    effectiveTones,
+    searchQueries: effectiveTerms.slice(0, 6).map((item) => item.term),
+  };
+}
+
+async function runWeeklyLearningAnalysis(force = false) {
+  const analytics = await readAnalytics();
+  const lastRun = analytics.lastWeeklyAnalysisAt ? new Date(analytics.lastWeeklyAnalysisAt).getTime() : 0;
+  if (!force && Number.isFinite(lastRun) && Date.now() - lastRun < WEEK_MS) {
+    return readLearning();
+  }
+
+  const learning = buildWeeklyLearning(analytics);
+  if (learning.sampleSize === 0) {
+    return readLearning();
+  }
+
+  analytics.lastWeeklyAnalysisAt = learning.generatedAt;
+  await writeAnalytics(analytics);
+  await writeLearning(learning);
+  log(`Updated weekly learning from ${learning.sampleSize} posted item(s)`);
+  return learning;
 }
 
 function isOlderThan48Hours(createdAtMs) {
@@ -311,7 +587,7 @@ function isLockedOrArchivedRestrictionFailure(details) {
   return isMissingCommentBoxFailure(text) && /(Locked post|Archived post)/i.test(text);
 }
 
-export async function addToQueue(postUrl, commentText, subreddit) {
+export async function addToQueue(postUrl, commentText, subreddit, context = {}) {
   if (!postUrl || !commentText || !subreddit) {
     throw new Error('postUrl, commentText, and subreddit are required.');
   }
@@ -332,7 +608,7 @@ export async function addToQueue(postUrl, commentText, subreddit) {
   }
 
   const scheduledAt = nextScheduledAt(queue);
-  const item = buildQueueItem(postUrl, commentText, subreddit, scheduledAt);
+  const item = buildQueueItem(postUrl, commentText, subreddit, scheduledAt, context);
 
   queue.push(item);
   await writeQueue(queue);
@@ -356,6 +632,7 @@ async function enrichOpportunity(opportunity) {
     subreddit: metadata.subreddit || extractSubreddit(postUrl),
     createdAtMs: metadata.createdAtMs,
     title: metadata.title,
+    reason: opportunity.reason || opportunity.opportunity || '',
     locked: metadata.locked,
     archived: metadata.archived,
   };
@@ -372,6 +649,9 @@ async function markQueueItem(queue, itemId, status, postedAt = null) {
 }
 
 async function processQueue() {
+  await refreshTrackedMetrics();
+  await runWeeklyLearningAnalysis();
+
   const queue = await readQueue();
   let postedToday = countPostedToday(queue);
   const now = Date.now();
@@ -448,6 +728,7 @@ async function processQueue() {
       if (result.success) {
         const postedAt = new Date().toISOString();
         await markQueueItem(queue, item.id, 'posted', postedAt);
+        await recordPublication(item, 'posted', { postedAt, metadata });
         await blockPostUrl(item.postUrl);
         postedToday += 1;
         log(`Posted successfully to r/${item.subreddit} at ${postedAt}`);
@@ -459,6 +740,7 @@ async function processQueue() {
       }
 
       await markQueueItem(queue, item.id, 'failed');
+      await recordPublication(item, 'failed', { failureDetails: result.details, metadata });
       log(`Posting failed for ${item.postUrl}${result.details ? `: ${result.details}` : ''}`);
     } catch (error) {
       if (isLockedOrArchivedRestrictionFailure(error.message)) {
@@ -466,6 +748,7 @@ async function processQueue() {
       }
 
       await markQueueItem(queue, item.id, 'failed');
+      await recordPublication(item, 'failed', { failureDetails: error.message, metadata });
       log(`Posting error for ${item.postUrl}: ${error.message}`);
       if (error.stack) {
         log(`Stack trace: ${error.stack}`);
@@ -531,7 +814,8 @@ async function fillDailyQueue(maxAttempts = 5) {
       const queueBeforeResearch = await readQueue();
       const blockedPostUrls = await readBlockedPosts();
       const knownPostUrls = [...getQueuePostUrls(queueBeforeResearch), ...blockedPostUrls];
-      const opportunities = await runResearch({ knownPostUrls });
+      const learning = await readLearning();
+      const opportunities = await runResearch({ knownPostUrls, learning });
       log(`Selected ${opportunities.length} opportunities from research`);
       
       for (const opportunity of opportunities) {
@@ -568,7 +852,10 @@ async function fillDailyQueue(maxAttempts = 5) {
             continue;
           }
 
-          const result = await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit);
+          const result = await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit, {
+            title: enriched.title,
+            reason: enriched.reason,
+          });
           if (result.success) {
             activeCount = countActiveToday(await readQueue());
           }

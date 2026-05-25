@@ -1,6 +1,8 @@
 node_modules/
 reddit_session.json
 queue.json
+reddit-analytics.json
+reddit-learning.json
 .env
 __pycache__/
 *.pyc
