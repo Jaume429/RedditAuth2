@@ -444,7 +444,7 @@ function shortlistPosts(posts, learning = {}) {
       };
     })
     .sort((a, b) => b.local_score - a.local_score)
-    .slice(0, 35);
+    .slice(0, 150);
 }
 
 function stripMarkdownFence(text) {
