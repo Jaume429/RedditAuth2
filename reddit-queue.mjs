@@ -197,7 +197,13 @@ async function blockPostUrl(postUrl) {
   log(`Marked post as permanently blocked: ${postUrl}`);
 }
 
+function isGoldOpportunity(comments, score) {
+  return comments >= 300 && score >= 100;
+}
+
 function buildQueueItem(postUrl, commentText, subreddit, scheduledAt, context = {}) {
+  const isGold = isGoldOpportunity(context.comments || 0, context.score || 0);
+  const priority = isGold ? 'high' : 'normal';
   return {
     id: `queue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     postUrl,
@@ -206,6 +212,7 @@ function buildQueueItem(postUrl, commentText, subreddit, scheduledAt, context = 
     title: context.title || '',
     opportunityReason: context.reason || '',
     status: 'pending',
+    priority,
     scheduledAt,
     postedAt: null,
   };
@@ -615,7 +622,14 @@ export async function addToQueue(postUrl, commentText, subreddit, context = {}) 
     return { success: false, postUrl, subreddit, duplicate: true };
   }
 
-  const scheduledAt = nextScheduledAt(queue);
+  let scheduledAt = nextScheduledAt(queue);
+  
+  // Gold opportunities are published immediately (next 2 minutes)
+  if (isGoldOpportunity(context.comments || 0, context.score || 0)) {
+    scheduledAt = new Date(Date.now() + randomBetween(30000, 120000)).toISOString();
+    log(`🔥 GOLD OPPORTUNITY DETECTED: ${context.comments}+ comments, ${context.score}+ upvotes`);
+  }
+  
   const item = buildQueueItem(postUrl, commentText, subreddit, scheduledAt, context);
 
   queue.push(item);
@@ -643,6 +657,8 @@ async function enrichOpportunity(opportunity) {
     reason: opportunity.reason || opportunity.opportunity || '',
     locked: metadata.locked,
     archived: metadata.archived,
+    comments: metadata.comments,
+    score: metadata.score,
   };
 }
 
@@ -669,7 +685,12 @@ async function processQueue() {
       const scheduledTime = new Date(item.scheduledAt).getTime();
       return Number.isFinite(scheduledTime) && scheduledTime <= now;
     })
-    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+    .sort((a, b) => {
+      // High priority items first, then by scheduled time
+      if (a.priority === 'high' && b.priority !== 'high') return -1;
+      if (a.priority !== 'high' && b.priority === 'high') return 1;
+      return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+    });
 
   if (!pendingItems.length) {
     const futurePendingCount = queue.filter((item) => {
@@ -875,6 +896,8 @@ async function fillDailyQueue(maxAttempts = 5) {
           const result = await addToQueue(enriched.postUrl, enriched.commentText, enriched.subreddit, {
             title: enriched.title,
             reason: enriched.reason,
+            comments: enriched.comments,
+            score: enriched.score,
           });
           if (result.success) {
             activeCount = countActiveToday(await readQueue());
