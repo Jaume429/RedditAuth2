@@ -58,7 +58,7 @@ DISQUALIFY IF:
 - Post is from a developer/technical builder (even if interested in AI tools)
 - Post is only casually discussing AI or technology news
 - Post is low-effort ("help" or no clear question)
-- Post is older than 7 days
+- Post is older than 24 hours
 - Already has multiple highly-upvoted expert answers
 - Strongly negative tone toward AI
 - OP is complaining about a tool not working or asking for specific no-code tool recommendations instead of asking how to build/launch
@@ -98,7 +98,7 @@ const PROXY_URLS = [
   'http://aaubcdkx-at-10:ecljgj60smyr@p.webshare.io:80',
 ];
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const MAX_POST_AGE_MS = 48 * 60 * 60 * 1000;
+const MAX_POST_AGE_MS = 24 * 60 * 60 * 1000;
 const REDDIT_TOP_TIME_RANGE = "week";
 const MAX_PROXY_ATTEMPTS = 10;
 const PROXY_RETRY_DELAY_MS = 3000;

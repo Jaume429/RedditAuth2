@@ -806,6 +806,7 @@ async function fillDailyQueue(maxAttempts = 5) {
   try {
     let attempt = 0;
     let activeCount = countActiveToday(await readQueue());
+    let consecutiveEmptyAttempts = 0;
     
     while (attempt < maxAttempts && activeCount < MAX_POSTS_PER_DAY) {
       attempt += 1;
@@ -817,6 +818,16 @@ async function fillDailyQueue(maxAttempts = 5) {
       const learning = await readLearning();
       const opportunities = await runResearch({ knownPostUrls, learning });
       log(`Selected ${opportunities.length} opportunities from research`);
+      
+      if (opportunities.length === 0) {
+        consecutiveEmptyAttempts += 1;
+        if (consecutiveEmptyAttempts >= 3) {
+          log(`No opportunities found in 3 consecutive attempts. Abandoning research and pushing what we have...`);
+          break;
+        }
+      } else {
+        consecutiveEmptyAttempts = 0;
+      }
       
       for (const opportunity of opportunities) {
         if (activeCount >= MAX_POSTS_PER_DAY) {
