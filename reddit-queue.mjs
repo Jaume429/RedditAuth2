@@ -177,6 +177,14 @@ function getQueuePostUrls(queue) {
   return queue.map((item) => item.postUrl).filter(Boolean);
 }
 
+async function getPublishedPostUrls() {
+  const analytics = await readAnalytics();
+  return (analytics.publications || [])
+    .filter((pub) => pub.status === 'posted')
+    .map((pub) => pub.postUrl)
+    .filter(Boolean);
+}
+
 async function blockPostUrl(postUrl) {
   const blockedPosts = await readBlockedPosts();
   const normalizedPostUrl = normalizePostUrl(postUrl);
@@ -814,7 +822,8 @@ async function fillDailyQueue(maxAttempts = 5) {
       
       const queueBeforeResearch = await readQueue();
       const blockedPostUrls = await readBlockedPosts();
-      const knownPostUrls = [...getQueuePostUrls(queueBeforeResearch), ...blockedPostUrls];
+      const publishedPostUrls = await getPublishedPostUrls();
+      const knownPostUrls = [...getQueuePostUrls(queueBeforeResearch), ...blockedPostUrls, ...publishedPostUrls];
       const learning = await readLearning();
       const opportunities = await runResearch({ knownPostUrls, learning });
       log(`Selected ${opportunities.length} opportunities from research`);

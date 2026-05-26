@@ -483,7 +483,7 @@ async function analyzeWithGemini(posts, knownPostUrls = [], learning = {}) {
       throw new Error("Gemini API key missing. Set GEMINI_API_KEY in the Railway environment.");
     }
 
-    const knownUrls = [...new Set(knownPostUrls.filter(Boolean).map(String))];
+    const knownUrls = [...new Set(knownPostUrls.filter(Boolean).map(normalizePostUrl))];
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
     const response = await fetch(`${endpoint}?key=${encodeURIComponent(GEMINI_API_KEY)}`, {
       method: "POST",
