@@ -18,16 +18,18 @@ const BLOCKED_SUBREDDITS = new Set([
 ]);
 
 const SEARCH_QUERIES = [
-  "how to build",
-  "no code",
-  "Claude Code",
-  "launch idea",
-  "build without coding",
-  "AI to build",
-  "ship product",
-  "no developer",
-  "debugging AI",
-  "prompting workflow",
+  "Claude Code workflow",
+  "Claude Code help",
+  "Claude to build",
+  "building app with Claude",
+  "no code startup",
+  "launch without coding",
+  "MVP with Claude",
+  "side project Claude",
+  "non-technical founder",
+  "Claude AI build",
+  "build product fast",
+  "technical co-founder",
 ];
 
 const LANDING_PAGE = "https://buildwithclaude.vercel.app";
@@ -40,10 +42,10 @@ PRODUCT:
 - Description: A practical guide for non-developers and entrepreneurs who want to build and launch a digital product using Claude Code and AI, without knowing how to code.
 - Ideal customer: entrepreneur, creator, freelancer, or professional with an idea who doesn't know how to execute it technically.
 
-MUST-HAVE CRITERIA (post must match ALL 3):
-1. Author is clearly non-technical AND has a specific idea/problem to solve (not just casual interest)
+MUST-HAVE CRITERIA (post must match AT LEAST 2 of 3):
+1. Author is clearly non-technical OR has a specific idea/problem to solve (not just casual interest)
 2. Post shows real intent to BUILD or LAUNCH something (not just asking about AI in general)
-3. Post is asking for help, resources, or alternatives-not already solved or promotional
+3. Post is asking for help, resources, or alternatives - not already solved or promotional
 
 BONUS CRITERIA (prioritize posts matching these):
 - Explicitly mentions "no code", "without coding", or inability to code technically
@@ -499,7 +501,7 @@ async function analyzeWithGemini(posts, knownPostUrls = [], learning = {}) {
 CRITICAL: Analyze these Reddit posts and identify ONLY the BEST 5-10 matches.
 - If fewer than 5 are genuinely excellent, return fewer.
 - Do NOT pad with weak matches.
-- Ensure each post meets ALL three must-have criteria.
+- Ensure each post meets AT LEAST 2 of the 3 must-have criteria.
 - Do NOT suggest any post whose reddit_url appears in Already queued or blocked post URLs.
 - Return VALID JSON ONLY. No explanations.
 
