@@ -425,7 +425,7 @@ function shortlistPosts(posts, learning = {}) {
   ];
 
   const MIN_COMMENTS = 40;
-  const MIN_UPVOTES = 70;
+  const MIN_UPVOTES = 15;
   const belowCommentThreshold = posts.filter((post) => post.comments < MIN_COMMENTS).length;
   const belowUpvoteThreshold = posts.filter((post) => post.score < MIN_UPVOTES).length;
   const maxComments = Math.max(0, ...posts.map((post) => post.comments || 0));
