@@ -26,6 +26,7 @@ const BLOCKED_SUBREDDITS = new Set([
   'startups',
 ]);
 let queueProcessorRunning = false;
+let dailyJobRunning = false;
 
 function log(message) {
   console.log(`[reddit-queue] ${message}`);
@@ -951,11 +952,19 @@ function scheduleDailyJob() {
   log(`Next daily Reddit automation job scheduled for ${nextRun.toISOString()}`);
 
   setTimeout(async () => {
+    if (dailyJobRunning) {
+      log('Daily job already running. Skipping and rescheduling...');
+      scheduleDailyJob();
+      return;
+    }
+
+    dailyJobRunning = true;
     try {
       await runDailyJob();
     } catch (error) {
       log(`Daily Reddit automation job failed: ${error.message}`);
     } finally {
+      dailyJobRunning = false;
       scheduleDailyJob();
     }
   }, delayMs);
