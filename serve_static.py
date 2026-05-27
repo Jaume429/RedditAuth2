@@ -27,6 +27,26 @@ PROXY_USER = "aaubcdkx"
 PROXY_PASS = "ecljgj60smyr"
 
 
+def normalize_post_url(post_url):
+    value = str(post_url or "").strip().rstrip("/")
+    parsed = urlparse(value)
+    parts = [part for part in parsed.path.split("/") if part]
+    lowered_parts = [part.lower() for part in parts]
+
+    if "comments" in lowered_parts:
+        comments_index = lowered_parts.index("comments")
+        post_id = parts[comments_index + 1].lower() if comments_index + 1 < len(parts) else ""
+        if post_id and post_id.isalnum():
+            if "r" in lowered_parts:
+                subreddit_index = lowered_parts.index("r")
+                if subreddit_index + 1 < len(parts):
+                    subreddit = parts[subreddit_index + 1].lower()
+                    return f"https://reddit.com/r/{subreddit}/comments/{post_id}"
+            return f"https://reddit.com/comments/{post_id}"
+
+    return value
+
+
 def start_queue_scheduler():
     process = subprocess.Popen(
         ["node", "reddit-queue.mjs", "schedule"],
@@ -155,6 +175,14 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
             }
             
             items = self.read_queue_items()
+            normalized_post_url = normalize_post_url(postUrl)
+            if any(normalize_post_url(existing.get("postUrl")) == normalized_post_url for existing in items):
+                self.send_json(
+                    {"ok": False, "error": "Post is already in the queue", "duplicate": True},
+                    status=409
+                )
+                return
+
             items.append(item)
             self.write_queue_items(items)
             

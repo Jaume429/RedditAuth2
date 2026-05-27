@@ -70,10 +70,6 @@ function isBlockedSubreddit(subreddit) {
   return BLOCKED_SUBREDDITS.has(String(subreddit || '').toLowerCase());
 }
 
-function normalizeQueue(queue) {
-  return Array.isArray(queue) ? queue : [];
-}
-
 function normalizeBlockedPosts(blockedPosts) {
   return Array.isArray(blockedPosts) ? blockedPosts : [];
 }
@@ -89,14 +85,83 @@ function normalizePostUrl(postUrl) {
   try {
     const url = new URL(String(postUrl));
     url.protocol = 'https:';
-    url.hostname = url.hostname.replace(/^www\./i, '').toLowerCase();
+    url.hostname = url.hostname.replace(/^(www\.|old\.)/i, '').toLowerCase();
     url.hash = '';
     url.search = '';
     url.pathname = url.pathname.replace(/\/$/, '');
+
+    const parts = url.pathname.split('/').filter(Boolean);
+    const subredditIndex = parts.findIndex((part) => part.toLowerCase() === 'r');
+    const commentsIndex = parts.findIndex((part) => part.toLowerCase() === 'comments');
+    const postId = commentsIndex >= 0 ? parts[commentsIndex + 1] : null;
+
+    if (postId && /^[a-z0-9]+$/i.test(postId)) {
+      if (subredditIndex >= 0 && parts[subredditIndex + 1]) {
+        return `https://reddit.com/r/${parts[subredditIndex + 1].toLowerCase()}/comments/${postId.toLowerCase()}`;
+      }
+
+      return `https://reddit.com/comments/${postId.toLowerCase()}`;
+    }
+
     return url.toString();
   } catch {
-    return String(postUrl || '').trim().replace(/\/$/, '');
+    const value = String(postUrl || '').trim().replace(/\/$/, '');
+    const match = value.match(/\/r\/([^/]+)\/comments\/([a-z0-9]+)/i);
+    if (match) {
+      return `https://reddit.com/r/${match[1].toLowerCase()}/comments/${match[2].toLowerCase()}`;
+    }
+    return value;
   }
+}
+
+function queueItemRank(item) {
+  if (item?.status === 'posted') return 3;
+  if (item?.status === 'pending') return 2;
+  if (item?.status === 'failed') return 1;
+  return 0;
+}
+
+function shouldReplaceQueueItem(existing, candidate) {
+  const existingRank = queueItemRank(existing);
+  const candidateRank = queueItemRank(candidate);
+  if (candidateRank !== existingRank) {
+    return candidateRank > existingRank;
+  }
+
+  const existingTime = new Date(existing?.postedAt || existing?.scheduledAt || 0).getTime();
+  const candidateTime = new Date(candidate?.postedAt || candidate?.scheduledAt || 0).getTime();
+  if (!Number.isFinite(existingTime)) return true;
+  if (!Number.isFinite(candidateTime)) return false;
+
+  return candidateRank === 2 ? candidateTime < existingTime : candidateTime > existingTime;
+}
+
+function normalizeQueue(queue) {
+  if (!Array.isArray(queue)) return [];
+
+  const knownItems = new Map();
+  const uniqueItems = [];
+
+  for (const item of queue) {
+    const key = normalizePostUrl(item?.postUrl);
+    if (!key) {
+      uniqueItems.push(item);
+      continue;
+    }
+
+    const knownIndex = knownItems.get(key);
+    if (knownIndex === undefined) {
+      knownItems.set(key, uniqueItems.length);
+      uniqueItems.push(item);
+      continue;
+    }
+
+    if (shouldReplaceQueueItem(uniqueItems[knownIndex], item)) {
+      uniqueItems[knownIndex] = item;
+    }
+  }
+
+  return uniqueItems;
 }
 
 async function readQueue() {
@@ -212,6 +277,20 @@ function buildQueueItem(postUrl, commentText, subreddit, scheduledAt, context = 
     subreddit,
     title: context.title || '',
     opportunityReason: context.reason || '',
+    discovery: {
+      score: Number(context.score || 0),
+      comments: Number(context.comments || 0),
+      upvoteRatio: context.upvoteRatio ?? null,
+      localScore: Number(context.localScore || 0),
+      fitScore: Number(context.fitScore || 0),
+      hotnessScore: Number(context.hotnessScore || 0),
+      freshnessScore: Number(context.freshnessScore || 0),
+      commentsPerHour: Number(context.commentsPerHour || 0),
+      scorePerHour: Number(context.scorePerHour || 0),
+      sourceSubreddit: context.sourceSubreddit || subreddit,
+      sourceQuery: context.sourceQuery || null,
+      sourceSort: context.sourceSort || null,
+    },
     status: 'pending',
     priority,
     scheduledAt,
@@ -660,6 +739,16 @@ async function enrichOpportunity(opportunity) {
     archived: metadata.archived,
     comments: metadata.comments,
     score: metadata.score,
+    upvoteRatio: metadata.upvoteRatio,
+    localScore: opportunity.localScore || 0,
+    fitScore: opportunity.fitScore || 0,
+    hotnessScore: opportunity.hotnessScore || 0,
+    freshnessScore: opportunity.freshnessScore || 0,
+    commentsPerHour: opportunity.commentsPerHour || 0,
+    scorePerHour: opportunity.scorePerHour || 0,
+    sourceSubreddit: opportunity.sourceSubreddit || extractSubreddit(postUrl),
+    sourceQuery: opportunity.sourceQuery || null,
+    sourceSort: opportunity.sourceSort || null,
   };
 }
 
@@ -899,6 +988,16 @@ async function fillDailyQueue(maxAttempts = 5) {
             reason: enriched.reason,
             comments: enriched.comments,
             score: enriched.score,
+            upvoteRatio: enriched.upvoteRatio,
+            localScore: enriched.localScore,
+            fitScore: enriched.fitScore,
+            hotnessScore: enriched.hotnessScore,
+            freshnessScore: enriched.freshnessScore,
+            commentsPerHour: enriched.commentsPerHour,
+            scorePerHour: enriched.scorePerHour,
+            sourceSubreddit: enriched.sourceSubreddit,
+            sourceQuery: enriched.sourceQuery,
+            sourceSort: enriched.sourceSort,
           });
           if (result.success) {
             activeCount = countActiveToday(await readQueue());

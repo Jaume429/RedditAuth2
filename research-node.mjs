@@ -32,6 +32,81 @@ const SEARCH_QUERIES = [
   "coding knowledge",
 ];
 
+const SUBREDDIT_QUERY_PACKS = {
+  claudecode: [
+    "coding amateur",
+    "built with Claude",
+    "Claude Code app",
+    "first project",
+    "I built",
+    "MVP",
+  ],
+  claudeai: [
+    "built with Claude",
+    "Claude app",
+    "workflow",
+    "non technical",
+    "I built",
+  ],
+  vibecoding: [
+    "vibe coding",
+    "built an app",
+    "first app",
+    "product idea",
+    "can't code",
+  ],
+  sideproject: [
+    "MVP",
+    "product idea",
+    "launched",
+    "build app",
+    "non technical",
+  ],
+  nocode: [
+    "can't code",
+    "build without coding",
+    "non technical founder",
+    "no code app",
+    "technical cofounder",
+  ],
+  indiehackers: [
+    "MVP",
+    "product idea",
+    "technical cofounder",
+    "build app",
+  ],
+  entrepreneur: [
+    "non technical founder",
+    "technical cofounder",
+    "I have an idea",
+    "MVP",
+  ],
+  chatgpt: [
+    "build app",
+    "product idea",
+    "can't code",
+  ],
+  artificial: [
+    "build app",
+    "technical barrier",
+    "product idea",
+  ],
+};
+
+const SUBREDDIT_QUERY_BUDGETS = {
+  claudecode: 5,
+  claudeai: 5,
+  vibecoding: 4,
+  sideproject: 4,
+  nocode: 3,
+  indiehackers: 3,
+  entrepreneur: 2,
+  chatgpt: 2,
+  artificial: 2,
+};
+
+const HIGH_PRIORITY_SUBREDDITS = new Set(["claudecode", "claudeai", "vibecoding", "sideproject"]);
+
 const LANDING_PAGE = "https://buildwithclaude.vercel.app";
 
 const SYSTEM_PROMPT = `You are a Reddit-native operator finding ONLY the most relevant reply opportunities for a specific digital product. Your job is strict filtering and writing useful comments that sound like they belong in the thread.
@@ -110,13 +185,32 @@ function normalizePostUrl(postUrl) {
   try {
     const url = new URL(String(postUrl));
     url.protocol = 'https:';
-    url.hostname = url.hostname.replace(/^www\./i, '').toLowerCase();
+    url.hostname = url.hostname.replace(/^(www\.|old\.)/i, '').toLowerCase();
     url.hash = '';
     url.search = '';
     url.pathname = url.pathname.replace(/\/$/, '');
+
+    const parts = url.pathname.split('/').filter(Boolean);
+    const subredditIndex = parts.findIndex((part) => part.toLowerCase() === 'r');
+    const commentsIndex = parts.findIndex((part) => part.toLowerCase() === 'comments');
+    const postId = commentsIndex >= 0 ? parts[commentsIndex + 1] : null;
+
+    if (postId && /^[a-z0-9]+$/i.test(postId)) {
+      if (subredditIndex >= 0 && parts[subredditIndex + 1]) {
+        return `https://reddit.com/r/${parts[subredditIndex + 1].toLowerCase()}/comments/${postId.toLowerCase()}`;
+      }
+
+      return `https://reddit.com/comments/${postId.toLowerCase()}`;
+    }
+
     return url.toString();
   } catch {
-    return String(postUrl || '').trim().replace(/\/$/, '');
+    const value = String(postUrl || '').trim().replace(/\/$/, '');
+    const match = value.match(/\/r\/([^/]+)\/comments\/([a-z0-9]+)/i);
+    if (match) {
+      return `https://reddit.com/r/${match[1].toLowerCase()}/comments/${match[2].toLowerCase()}`;
+    }
+    return value;
   }
 }
 
@@ -167,6 +261,75 @@ function queryForIndex(index, learning = {}) {
     .filter((query) => query.length >= 4);
   const queries = [...learnedQueries, ...SEARCH_QUERIES];
   return queries[index % queries.length];
+}
+
+function uniqueStrings(values) {
+  const seen = new Set();
+  return values
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function queryBudgetForSubreddit(subreddit) {
+  const key = String(subreddit || '').toLowerCase();
+  return SUBREDDIT_QUERY_BUDGETS[key] || 2;
+}
+
+function queryPackForSubreddit(subreddit, learning = {}, attempt = 1) {
+  const key = String(subreddit || '').toLowerCase();
+  const normalized = normalizeLearning(learning);
+  const learnedQueries = normalized.searchQueries
+    .map((query) => String(query || '').trim())
+    .filter((query) => query.length >= 4);
+  const baseQueries = SUBREDDIT_QUERY_PACKS[key] || [];
+  const queries = uniqueStrings([...learnedQueries, ...baseQueries, ...SEARCH_QUERIES]);
+  const budget = Math.min(queryBudgetForSubreddit(subreddit), queries.length);
+  const start = ((attempt - 1) * budget) % Math.max(queries.length, 1);
+  const selected = [];
+
+  for (let offset = 0; selected.length < budget && offset < queries.length; offset += 1) {
+    selected.push(queries[(start + offset) % queries.length]);
+  }
+
+  return selected.length ? selected : [queryForIndex(attempt - 1, learning)];
+}
+
+function chunkArray(values, size) {
+  const chunks = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function buildCombinedQuery(queries) {
+  return queries
+    .map((query) => `"${String(query).replace(/"/g, '')}"`)
+    .join(" OR ");
+}
+
+function listingUrlsForSubreddit(subreddit) {
+  const urls = [
+    {
+      label: "top_day",
+      url: `https://www.reddit.com/r/${subreddit}/top.json?limit=35&t=day`,
+    },
+  ];
+
+  if (HIGH_PRIORITY_SUBREDDITS.has(String(subreddit || '').toLowerCase())) {
+    urls.push({
+      label: "hot",
+      url: `https://www.reddit.com/r/${subreddit}/hot.json?limit=25`,
+    });
+  }
+
+  return urls;
 }
 
 function learningSummaryForPrompt(learning = {}) {
@@ -295,24 +458,29 @@ async function verifyProxyIsWorking() {
   return false;
 }
 
-async function fetchRedditPosts(learning = {}) {
+async function fetchRedditPosts(learning = {}, attempt = 1) {
   const posts = [];
   const seen = new Set();
   const subreddits = rankedSubredditsFromLearning(learning);
 
-  const addPost = (post, now) => {
+  const addPost = (post, now, source = {}) => {
     const createdMs = (post.created_utc || 0) * 1000;
 
     if (now - createdMs > MAX_POST_AGE_MS) {
-      return;
+      return false;
     }
 
-    if (!post.permalink || seen.has(post.id)) {
-      return;
+    if (!post.permalink || !post.id) {
+      return false;
+    }
+
+    if (seen.has(post.id)) {
+      return false;
     }
 
     seen.add(post.id);
     const url = `https://reddit.com${post.permalink}`;
+    const ageHours = Math.max(0.25, (now - createdMs) / (60 * 60 * 1000));
 
     posts.push({
       id: post.id,
@@ -323,7 +491,14 @@ async function fetchRedditPosts(learning = {}) {
       score: post.score || 0,
       comments: post.num_comments || 0,
       created_utc: post.created_utc,
+      upvote_ratio: Number.isFinite(Number(post.upvote_ratio)) ? Number(post.upvote_ratio) : null,
+      comments_per_hour: Number(((post.num_comments || 0) / ageHours).toFixed(2)),
+      score_per_hour: Number(((post.score || 0) / ageHours).toFixed(2)),
+      source_subreddit: source.subreddit || post.subreddit,
+      source_query: source.query || null,
+      source_sort: source.sort || null,
     });
+    return true;
   };
 
   for (let i = 0; i < subreddits.length; i++) {
@@ -333,18 +508,43 @@ async function fetchRedditPosts(learning = {}) {
       continue;
     }
 
-    const query = queryForIndex(i, learning);
+    const queries = queryPackForSubreddit(subreddit, learning, attempt);
+    const targets = [];
+    const queryChunks = chunkArray(queries, 3);
+    const isHighPriority = HIGH_PRIORITY_SUBREDDITS.has(String(subreddit || '').toLowerCase());
+
+    for (const queryChunk of queryChunks) {
+      const query = buildCombinedQuery(queryChunk);
+      targets.push({
+        query,
+        sort: "top",
+        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=35&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
+      });
+    }
+
+    if (isHighPriority && queryChunks[0]) {
+      const query = buildCombinedQuery(queryChunks[0]);
+      targets.push({
+        query,
+        sort: "new",
+        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`,
+      });
+    }
+
+    for (const listing of listingUrlsForSubreddit(subreddit)) {
+      targets.push({
+        query: null,
+        sort: listing.label,
+        url: listing.url,
+      });
+    }
     
     try {
-      log(`Fetching r/${subreddit} for "${query}"...`);
-      
-      const urls = [
-        `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=25&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
-        `https://www.reddit.com/r/${subreddit}/top.json?limit=25&t=${REDDIT_TOP_TIME_RANGE}`,
-      ];
+      const uniqueBefore = posts.length;
+      log(`Fetching r/${subreddit}: ${queries.join(", ")} (${targets.length} request(s))...`);
 
-      for (const url of urls) {
-        const response = await fetchTextViaProxy(url, activeProxyUrl, {
+      for (const target of targets) {
+        const response = await fetchTextViaProxy(target.url, activeProxyUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           },
@@ -361,14 +561,21 @@ async function fetchRedditPosts(learning = {}) {
         const now = Date.now();
 
         for (const child of data.data?.children || []) {
-          addPost(child.data, now);
+          addPost(child.data, now, {
+            subreddit,
+            query: target.query,
+            sort: target.sort,
+          });
         }
 
-        await delay(1500);
+        await delay(450);
       }
 
+      const added = posts.length - uniqueBefore;
+      log(`r/${subreddit}: ${added} unique recent post(s) added from ${targets.length} request(s)`);
+
       if (i < subreddits.length - 1) {
-        await delay(4500);
+        await delay(1200);
       }
     } catch (error) {
       log(`Error fetching r/${subreddit}: ${error.message}`);
@@ -464,6 +671,135 @@ function shortlistPosts(posts, learning = {}) {
     .slice(0, 150);
 }
 
+function shortlistPostsV2(posts, learning = {}) {
+  const normalizedLearning = normalizeLearning(learning);
+  const learnedSubredditScores = new Map(
+    normalizedLearning.topSubreddits.map((item, index) => [
+      String(item.subreddit || '').toLowerCase(),
+      Math.max(0, 20 - index * 3),
+    ])
+  );
+  const learnedTerms = normalizedLearning.effectiveTerms
+    .map((item) => String(item.term || '').toLowerCase())
+    .filter(Boolean);
+  const keywords = [
+    "no code",
+    "nocode",
+    "without coding",
+    "don't know how to code",
+    "non technical",
+    "non-technical",
+    "build app",
+    "build an app",
+    "app idea",
+    "launch",
+    "side project",
+    "startup idea",
+    "ship",
+    "ai to build",
+    "claude",
+    "claude code",
+    "technical cofounder",
+    "debugging",
+    "prompting",
+    "spec",
+    "workflow",
+    "mvp",
+  ];
+  const goldenPatterns = [
+    /\bcoding amateur\b/i,
+    /\bnon[-\s]?technical\b/i,
+    /\bdon'?t know how to code\b/i,
+    /\bcan'?t code\b/i,
+    /\bno programming skills\b/i,
+    /\btechnical cofounder\b/i,
+    /\bbuild (an? )?(app|mvp|product)\b/i,
+    /\bproduct idea\b/i,
+    /\bfirst (app|project|product)\b/i,
+    /\bbuilt with claude\b/i,
+    /\bclaude code\b/i,
+    /\bship(ped|ping)?\b/i,
+  ];
+  const negativePatterns = [
+    /\b(cursor|claude|chatgpt).{0,20}\b(vs|versus|better than)\b/i,
+    /\bwhat'?s better\b/i,
+    /\bshow me your\b/i,
+    /\broast my\b/i,
+    /\blearn (python|javascript|programming|to code)\b/i,
+    /\bai replacing developers\b/i,
+    /\bmarketing advice\b/i,
+    /\bfundraising\b/i,
+  ];
+
+  const MIN_COMMENTS = 18;
+  const MIN_UPVOTES = 12;
+  const STRONG_FIT_MIN_COMMENTS = 5;
+  const STRONG_FIT_MIN_UPVOTES = 5;
+  const belowCommentThreshold = posts.filter((post) => post.comments < MIN_COMMENTS).length;
+  const belowUpvoteThreshold = posts.filter((post) => post.score < MIN_UPVOTES).length;
+  const maxComments = Math.max(0, ...posts.map((post) => post.comments || 0));
+  const maxScore = Math.max(0, ...posts.map((post) => post.score || 0));
+
+  log(
+    `Shortlist thresholds: hot=${MIN_COMMENTS}+ comments/${MIN_UPVOTES}+ upvotes or strong-fit=${STRONG_FIT_MIN_COMMENTS}+ comments/${STRONG_FIT_MIN_UPVOTES}+ upvotes; max seen ${maxComments} comments / ${maxScore} upvotes; below hot comments ${belowCommentThreshold}/${posts.length}, below hot upvotes ${belowUpvoteThreshold}/${posts.length}`
+  );
+
+  const scored = posts
+    .map((post) => {
+      const text = `${post.title} ${post.selftext}`.toLowerCase();
+      const keywordScore = keywords.reduce(
+        (score, keyword) => score + (text.includes(keyword) ? 8 : 0),
+        0
+      );
+      const goldenScore = goldenPatterns.reduce(
+        (score, pattern) => score + (pattern.test(text) ? 18 : 0),
+        0
+      );
+      const negativeScore = negativePatterns.reduce(
+        (score, pattern) => score + (pattern.test(text) ? 18 : 0),
+        0
+      );
+      const hotnessScore = Math.min(post.comments || 0, 180) * 0.85 + Math.min(post.score || 0, 800) * 0.32;
+      const freshnessScore = Math.min(post.comments_per_hour || 0, 40) * 4 + Math.min(post.score_per_hour || 0, 120) * 1.4;
+      const ratioScore = post.upvote_ratio ? Math.max(0, post.upvote_ratio - 0.7) * 45 : 0;
+      const subredditKey = String(post.subreddit).toLowerCase();
+      const subredditScore = subredditKey === "claudecode" ? 42 :
+                            ["vibecoding", "claudeai"].includes(subredditKey) ? 28 :
+                            ["sideproject", "nocode"].includes(subredditKey) ? 16 : 0;
+      const learnedSubredditScore = learnedSubredditScores.get(subredditKey) || 0;
+      const learnedTermScore = learnedTerms.reduce(
+        (score, term) => score + (text.includes(term) ? 6 : 0),
+        0
+      );
+      const showcasePenalty = /\b(showcase|look what i made)\b/i.test(text) && !/\b(coding amateur|non[-\s]?technical|first app|built with claude)\b/i.test(text) ? 16 : 0;
+      const saturationPenalty = (post.comments || 0) > 220 ? 18 : 0;
+      const fitScore = keywordScore + goldenScore + subredditScore + learnedSubredditScore + learnedTermScore - negativeScore - showcasePenalty;
+
+      return {
+        ...post,
+        local_score: Number((fitScore + hotnessScore + freshnessScore + ratioScore - saturationPenalty).toFixed(2)),
+        fit_score: fitScore,
+        hotness_score: Number(hotnessScore.toFixed(2)),
+        freshness_score: Number(freshnessScore.toFixed(2)),
+      };
+    })
+    .filter((post) => {
+      const isHotEnough = post.comments >= MIN_COMMENTS && post.score >= MIN_UPVOTES;
+      const isStrongFit = post.fit_score >= 55 && post.comments >= STRONG_FIT_MIN_COMMENTS && post.score >= STRONG_FIT_MIN_UPVOTES;
+      return isHotEnough || isStrongFit;
+    })
+    .sort((a, b) => b.local_score - a.local_score)
+    .slice(0, 150);
+
+  for (const post of scored.slice(0, 8)) {
+    log(
+      `Candidate ${Math.round(post.local_score)} | r/${post.subreddit} | ${post.score} upvotes | ${post.comments} comments | ${post.comments_per_hour}/h comments | "${post.title.slice(0, 90)}"`
+    );
+  }
+
+  return scored;
+}
+
 function stripMarkdownFence(text) {
   return text
     .trim()
@@ -546,10 +882,15 @@ ${JSON.stringify(posts, null, 2)}`,
   }
 }
 
-function normalizeOpportunities(opportunities, knownPostUrls = []) {
+function normalizeOpportunities(opportunities, knownPostUrls = [], sourcePosts = []) {
   if (!Array.isArray(opportunities)) return [];
 
   const knownPostUrlSet = buildKnownPostUrlSet(knownPostUrls);
+  const sourcePostByUrl = new Map(
+    sourcePosts
+      .filter((post) => post?.url)
+      .map((post) => [normalizePostUrl(post.url), post])
+  );
   const subredditCount = {};
   const MAX_POSTS_PER_SUBREDDIT = 2;
 
@@ -581,13 +922,30 @@ function normalizeOpportunities(opportunities, knownPostUrls = []) {
       
       return true;
     })
-    .map((item) => ({
-      reddit_url: String(item.reddit_url || item.url || ""),
-      title: String(item.title),
-      reason: String(item.reason || item.opportunity || "Relevant opportunity."),
-      reply: String(item.reply || item.suggested_reply || item.value_comment || ""),
-      risk: normalizeRisk(item.risk),
-    }));
+    .map((item) => {
+      const redditUrl = String(item.reddit_url || item.url || "");
+      const sourcePost = sourcePostByUrl.get(normalizePostUrl(redditUrl)) || {};
+
+      return {
+        reddit_url: redditUrl,
+        title: String(item.title),
+        reason: String(item.reason || item.opportunity || "Relevant opportunity."),
+        reply: String(item.reply || item.suggested_reply || item.value_comment || ""),
+        risk: normalizeRisk(item.risk),
+        score: sourcePost.score || 0,
+        comments: sourcePost.comments || 0,
+        upvoteRatio: sourcePost.upvote_ratio ?? null,
+        localScore: sourcePost.local_score || 0,
+        fitScore: sourcePost.fit_score || 0,
+        hotnessScore: sourcePost.hotness_score || 0,
+        freshnessScore: sourcePost.freshness_score || 0,
+        commentsPerHour: sourcePost.comments_per_hour || 0,
+        scorePerHour: sourcePost.score_per_hour || 0,
+        sourceSubreddit: sourcePost.source_subreddit || extractSubredditFromUrl(redditUrl),
+        sourceQuery: sourcePost.source_query || null,
+        sourceSort: sourcePost.source_sort || null,
+      };
+    });
 }
 
 function normalizeRisk(risk) {
@@ -619,7 +977,7 @@ export async function runResearch(options = {}) {
       attempt++;
       log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS} (have ${allOpportunities.length}/${TARGET_OPPORTUNITIES} opportunities)`);
       
-      const posts = await fetchRedditPosts(learning);
+      const posts = await fetchRedditPosts(learning, attempt);
       log(`Fetched ${posts.length} top/relevant recent posts`);
       
       if (!posts.length) {
@@ -630,7 +988,7 @@ export async function runResearch(options = {}) {
         continue;
       }
 
-      const shortlisted = shortlistPosts(posts, learning);
+      const shortlisted = shortlistPostsV2(posts, learning);
       log(`Shortlisted ${shortlisted.length} posts for analysis`);
       
       if (!shortlisted.length) {
@@ -642,9 +1000,14 @@ export async function runResearch(options = {}) {
       }
 
       const opportunities = await analyzeWithGemini(shortlisted, knownPostUrls, learning);
-      const normalized = normalizeOpportunities(opportunities, knownPostUrls);
+      const normalized = normalizeOpportunities(opportunities, knownPostUrls, shortlisted);
       
       log(`Found ${normalized.length} opportunities in this attempt`);
+      for (const opportunity of normalized) {
+        log(
+          `Opportunity accepted | r/${extractSubredditFromUrl(opportunity.reddit_url)} | ${opportunity.score} upvotes | ${opportunity.comments} comments | query=${opportunity.sourceQuery || opportunity.sourceSort || "unknown"} | local=${Math.round(opportunity.localScore)} | "${opportunity.title.slice(0, 90)}"`
+        );
+      }
       allOpportunities = allOpportunities.concat(normalized);
 
       if (allOpportunities.length >= TARGET_OPPORTUNITIES) {

@@ -665,8 +665,82 @@ async function refreshDashboard() {
   }
 }
 
+function normalizeQueuePostUrl(postUrl) {
+  try {
+    const url = new URL(String(postUrl));
+    url.hostname = url.hostname.replace(/^(www\.|old\.)/i, "").toLowerCase();
+    url.hash = "";
+    url.search = "";
+
+    const parts = url.pathname.split("/").filter(Boolean);
+    const subredditIndex = parts.findIndex((part) => part.toLowerCase() === "r");
+    const commentsIndex = parts.findIndex((part) => part.toLowerCase() === "comments");
+    const postId = commentsIndex >= 0 ? parts[commentsIndex + 1] : null;
+
+    if (postId && /^[a-z0-9]+$/i.test(postId)) {
+      if (subredditIndex >= 0 && parts[subredditIndex + 1]) {
+        return `https://reddit.com/r/${parts[subredditIndex + 1].toLowerCase()}/comments/${postId.toLowerCase()}`;
+      }
+
+      return `https://reddit.com/comments/${postId.toLowerCase()}`;
+    }
+
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    const value = String(postUrl || "").trim().replace(/\/$/, "");
+    const match = value.match(/\/r\/([^/]+)\/comments\/([a-z0-9]+)/i);
+    return match ? `https://reddit.com/r/${match[1].toLowerCase()}/comments/${match[2].toLowerCase()}` : value;
+  }
+}
+
+function queueItemDisplayRank(item) {
+  if (item?.status === "posted") return 3;
+  if (item?.status === "pending") return 2;
+  if (item?.status === "failed") return 1;
+  return 0;
+}
+
+function shouldReplaceQueueDisplayItem(existing, candidate) {
+  const existingRank = queueItemDisplayRank(existing);
+  const candidateRank = queueItemDisplayRank(candidate);
+  if (candidateRank !== existingRank) return candidateRank > existingRank;
+
+  const existingTime = new Date(existing?.postedAt || existing?.scheduledAt || 0).getTime();
+  const candidateTime = new Date(candidate?.postedAt || candidate?.scheduledAt || 0).getTime();
+  if (!Number.isFinite(existingTime)) return true;
+  if (!Number.isFinite(candidateTime)) return false;
+
+  return candidateRank === 2 ? candidateTime < existingTime : candidateTime > existingTime;
+}
+
+function dedupeQueueItems(queue) {
+  const knownItems = new Map();
+  const uniqueItems = [];
+
+  for (const item of Array.isArray(queue) ? queue : []) {
+    const key = normalizeQueuePostUrl(item?.postUrl);
+    if (!key) {
+      uniqueItems.push(item);
+      continue;
+    }
+
+    const knownIndex = knownItems.get(key);
+    if (knownIndex === undefined) {
+      knownItems.set(key, uniqueItems.length);
+      uniqueItems.push(item);
+      continue;
+    }
+
+    if (shouldReplaceQueueDisplayItem(uniqueItems[knownIndex], item)) {
+      uniqueItems[knownIndex] = item;
+    }
+  }
+
+  return uniqueItems;
+}
+
 function renderDashboard(queue) {
-  const items = Array.isArray(queue) ? queue : [];
+  const items = dedupeQueueItems(queue);
   const postedItems = items.filter((item) => item.status === "posted");
   const failedItems = items.filter((item) => item.status === "failed");
   const pendingItems = items.filter((item) => item.status === "pending");
