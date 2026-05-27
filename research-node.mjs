@@ -18,18 +18,18 @@ const BLOCKED_SUBREDDITS = new Set([
 ]);
 
 const SEARCH_QUERIES = [
-  "productivity",
-  "build fast",
-  "no code",
+  "build without code",
+  "no code startup",
   "side project",
-  "startup idea",
-  "product launch",
-  "technical barrier",
-  "idea execution",
-  "founder problem",
-  "execution block",
-  "time to launch",
-  "shipping fast",
+  "launch product",
+  "execution help",
+  "technical founder",
+  "build MVP",
+  "code workflow",
+  "startup problem",
+  "ship fast",
+  "idea to product",
+  "non-technical builder",
 ];
 
 const LANDING_PAGE = "https://buildwithclaude.vercel.app";
