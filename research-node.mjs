@@ -18,18 +18,18 @@ const BLOCKED_SUBREDDITS = new Set([
 ]);
 
 const SEARCH_QUERIES = [
-  "build without code",
-  "no code startup",
-  "side project",
-  "launch product",
-  "execution help",
-  "technical founder",
-  "build MVP",
-  "code workflow",
-  "startup problem",
-  "ship fast",
-  "idea to product",
-  "non-technical builder",
+  "don't know how to code",
+  "can't code",
+  "non-technical founder",
+  "I have an idea",
+  "technical barrier",
+  "build without coding",
+  "execution problem",
+  "product idea but",
+  "no programming skills",
+  "how to build app",
+  "startup as non-developer",
+  "coding knowledge",
 ];
 
 const LANDING_PAGE = "https://buildwithclaude.vercel.app";
@@ -42,32 +42,32 @@ PRODUCT:
 - Description: A practical guide for non-developers and entrepreneurs who want to build and launch a digital product using Claude Code and AI, without knowing how to code.
 - Ideal customer: entrepreneur, creator, freelancer, or professional with an idea who doesn't know how to execute it technically.
 
-MUST-HAVE CRITERIA (post must match ALL 3):
-1. Author is clearly NON-TECHNICAL (explicitly says they can't code, don't know how to code, not a developer) OR has a specific product/business idea with technical execution block
-2. Post shows CONCRETE INTENT to BUILD or LAUNCH a real product/project (not theoretical, not asking about tools in general)
-3. Post is asking for HELP with execution strategy, workflow, or how to overcome technical barrier - NOT asking for tool comparisons or which tool is "better"
+MUST-HAVE CRITERIA (post must match AT LEAST 2 of 3):
+1. Author explicitly says they can't code, don't know how to code, or is non-technical - OR they're an entrepreneur/maker with a real idea and execution barrier
+2. Post shows CONCRETE INTENT to BUILD or LAUNCH a real product/project (not theoretical, not tool shopping)
+3. Post is asking for HELP/ADVICE with how to overcome technical barrier or execute their idea
 
-BONUS CRITERIA (filter with these):
-- Explicitly mentions "can't code", "don't know how to code", "no technical skills", "non-developer"
-- Frustrated tone specifically about TECHNICAL execution being a blocker (not marketing, not sales, not other)
-- Asks "how do I..." or "how should I..." about building/launching
-- Author is entrepreneur, maker, creator, or freelancer with an idea
-- Post is from last 24h (higher chance of visibility)
+BONUS CRITERIA (prioritize posts matching these):
+- Author explicitly says "I don't know how to code" or "I can't code"
+- Author is entrepreneur, maker, founder, or freelancer
+- They describe a specific product/business idea they want to build
+- Frustrated tone about technical skills being the blocker
+- Asking "how do I..." or "is there a way to..." build without coding
 
 DISQUALIFY IF:
-- Author mentions being a developer, engineer, or having technical skills
-- Post is about tool features, comparisons, or "which tool is better"
-- Post is casual discussion about AI/tech trends (not personal project)
-- Post is low-effort, no clear question, or just venting without asking for help
+- Author explicitly identifies as a developer, software engineer, or has professional coding experience
+- Post is ONLY asking for tool comparisons ("Claude vs Cursor vs ChatGPT")
+- Post is casual tech discussion with no personal project (just debating AI)
+- Post is low-effort, no clear question
 - Post is older than 24 hours
-- Already has multiple highly-upvoted expert answers (comment likely won't be seen)
-- Problem is non-technical (marketing, sales, funding, time management, etc)
-- Post is asking about learning to code (our product is for non-coders, not learning tools)
+- Already has 10+ highly-upvoted expert answers
+- Problem is 100% non-technical (pure marketing/sales/fundraising/time management)
+- Post is asking to learn programming as a skill (we're for building, not learning)
 
 STRICT FILTERING:
-- If a post only PARTIALLY matches must-have criteria, DISCARD IT
-- If you find fewer than 4 genuinely excellent posts, return only those few (do NOT pad with weak matches)
-- Better to return 1-2 perfect posts than 5 mediocre ones
+- If a post doesn't clearly match at least 2 of 3 must-haves, DISCARD IT
+- If you find fewer than 3 genuinely good posts, return only those (don't pad with weak matches)
+- Better to return 2 perfect posts than 4 mediocre ones
 
 OUTPUT FORMAT (MANDATORY):
 Return ONLY a JSON array. No markdown, no explanations, no extra text before or after. All fields are required.
