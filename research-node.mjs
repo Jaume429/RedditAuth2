@@ -48,31 +48,27 @@ MUST-HAVE CRITERIA (post must match AT LEAST 2 of 3):
 3. Post is asking for help, resources, or alternatives - not already solved or promotional
 
 BONUS CRITERIA (prioritize posts matching these):
-- Explicitly mentions "no code", "without coding", or inability to code technically
-- Mentions Claude Code, Cursor, Copilot, or other AI coding tools
-- Frustrated tone about technical limitations blocking their execution
-- Urgency signals: "ship fast", "launch soon", "side project", "startup idea"
-- The thread is early enough that a useful comment can still be seen
-- The post asks for a concrete workflow, debugging, prompting, shipping, validation, or first-product advice
-- Prefer r/ClaudeCode and r/vibecoding when the thread is specifically about Claude Code workflow, token/context limits, debugging, specs, or shipping with AI
+- Mentions struggling with execution, technical limitations, or lack of coding skills
+- Mentions urgency: "ship fast", "launch soon", "side project", "MVP", "startup"
+- Frustrated or urgent tone about being blocked from building
+- Asks for workflow, strategy, or approach to building/launching
+- Posts from non-technical founders, makers, or entrepreneurs
+- Early enough in lifecycle that advice is useful (not stale)
 
 DISQUALIFY IF:
-- Post is from a developer/technical builder (even if interested in AI tools)
 - Post is only casually discussing AI or technology news
 - Post is low-effort ("help" or no clear question)
 - Post is older than 24 hours
 - Already has multiple highly-upvoted expert answers
-- Strongly negative tone toward AI
-- OP is complaining about a tool not working or asking for specific no-code tool recommendations instead of asking how to build/launch
-- OP is comparing tools or asking "what's better: X or Y tool" - these are not our posts
-- The only possible reply would be a vague encouragement or a generic "I wrote this down" link drop
-- The post is mainly a showcase and does not ask for feedback, advice, users, or next steps
+- Strongly negative tone toward AI or building in general
+- OP is comparing tools or asking "what's better: X or Y tool"
+- The only possible reply would be a vague encouragement or generic link drop
+- The post is mainly a showcase and does not ask for feedback, advice, or next steps
 
 STRICT FILTERING:
 - If a post only PARTIALLY matches must-have criteria, DISCARD IT
-- If you find fewer than 5 genuinely excellent posts, return only those few (do NOT pad with weak matches)
-- Better to return 2 perfect posts than 8 mediocre ones
-- Prefer one high-fit, high-specificity comment over four generic comments
+- If you find fewer than 4 genuinely excellent posts, return only those few (do NOT pad with weak matches)
+- Better to return 1-2 perfect posts than 5 mediocre ones
 
 OUTPUT FORMAT (MANDATORY):
 Return ONLY a JSON array. No markdown, no explanations, no extra text before or after. All fields are required.
@@ -82,7 +78,7 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
     "reddit_url": "https://reddit.com/r/...",
     "title": "exact post title",
     "reason": "1-2 sentences explaining why this post is an excellent fit (be specific about which criteria it matches)",
-    "reply": "Write a Reddit-native comment that would still be useful if the link were removed. Rules: (1) Answer the exact question/pain point in the post, not a nearby topic. (2) 1-2 short paragraphs, maximum 65 words total. (3) Start with the useful insight, not empathy filler. (4) Include one concrete tactic, example, or decision rule. (5) Use lowercase/casual style when it fits the subreddit, especially ClaudeCode/vibecoding. (6) No exclamation marks. (7) Do NOT use these phrases: 'I wrote this down', 'if helpful', 'if it helps', 'I put together', 'guide', 'check it out', 'here is what I learned', 'getting a product out fast'. (8) Do not claim personal experience unless it naturally matches the post. (9) Add the link only as a soft afterthought in the final sentence, using Reddit Markdown link text like '[more detail here](${LANDING_PAGE})' or '[this is the workflow](${LANDING_PAGE})'. Do not paste the raw URL. (10) Never make the link sentence longer than the useful advice.",
+    "reply": "Write a Reddit-native comment that would still be useful if the link were removed. Rules: (1) Answer the exact question/pain point in the post. (2) 1-2 short paragraphs, maximum 65 words total. (3) Start with the useful insight, not empathy filler. (4) Include one concrete tactic, example, or decision rule. (5) Use lowercase/casual style. (6) No exclamation marks. (7) Do NOT use these phrases: 'I wrote this down', 'if helpful', 'if it helps', 'I put together', 'guide', 'check it out', 'here is what I learned'. (8) Do not claim personal experience unless it naturally matches the post. (9) Add the link only as a soft afterthought in the final sentence using Reddit Markdown '[more here](${LANDING_PAGE})' or '[this is the workflow](${LANDING_PAGE})'. Do not paste raw URL. (10) Never make the link sentence longer than the useful advice.",
     "risk": "none | sensitive | saturated | other"
   }
 ]`;
