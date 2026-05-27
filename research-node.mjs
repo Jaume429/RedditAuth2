@@ -42,28 +42,27 @@ PRODUCT:
 - Description: A practical guide for non-developers and entrepreneurs who want to build and launch a digital product using Claude Code and AI, without knowing how to code.
 - Ideal customer: entrepreneur, creator, freelancer, or professional with an idea who doesn't know how to execute it technically.
 
-MUST-HAVE CRITERIA (post must match AT LEAST 2 of 3):
-1. Author is clearly non-technical OR has a specific idea/problem to solve (not just casual interest)
-2. Post shows real intent to BUILD or LAUNCH something (not just asking about AI in general)
-3. Post is asking for help, resources, or alternatives - not already solved or promotional
+MUST-HAVE CRITERIA (post must match ALL 3):
+1. Author is clearly NON-TECHNICAL (explicitly says they can't code, don't know how to code, not a developer) OR has a specific product/business idea with technical execution block
+2. Post shows CONCRETE INTENT to BUILD or LAUNCH a real product/project (not theoretical, not asking about tools in general)
+3. Post is asking for HELP with execution strategy, workflow, or how to overcome technical barrier - NOT asking for tool comparisons or which tool is "better"
 
-BONUS CRITERIA (prioritize posts matching these):
-- Mentions struggling with execution, technical limitations, or lack of coding skills
-- Mentions urgency: "ship fast", "launch soon", "side project", "MVP", "startup"
-- Frustrated or urgent tone about being blocked from building
-- Asks for workflow, strategy, or approach to building/launching
-- Posts from non-technical founders, makers, or entrepreneurs
-- Early enough in lifecycle that advice is useful (not stale)
+BONUS CRITERIA (filter with these):
+- Explicitly mentions "can't code", "don't know how to code", "no technical skills", "non-developer"
+- Frustrated tone specifically about TECHNICAL execution being a blocker (not marketing, not sales, not other)
+- Asks "how do I..." or "how should I..." about building/launching
+- Author is entrepreneur, maker, creator, or freelancer with an idea
+- Post is from last 24h (higher chance of visibility)
 
 DISQUALIFY IF:
-- Post is only casually discussing AI or technology news
-- Post is low-effort ("help" or no clear question)
+- Author mentions being a developer, engineer, or having technical skills
+- Post is about tool features, comparisons, or "which tool is better"
+- Post is casual discussion about AI/tech trends (not personal project)
+- Post is low-effort, no clear question, or just venting without asking for help
 - Post is older than 24 hours
-- Already has multiple highly-upvoted expert answers
-- Strongly negative tone toward AI or building in general
-- OP is comparing tools or asking "what's better: X or Y tool"
-- The only possible reply would be a vague encouragement or generic link drop
-- The post is mainly a showcase and does not ask for feedback, advice, or next steps
+- Already has multiple highly-upvoted expert answers (comment likely won't be seen)
+- Problem is non-technical (marketing, sales, funding, time management, etc)
+- Post is asking about learning to code (our product is for non-coders, not learning tools)
 
 STRICT FILTERING:
 - If a post only PARTIALLY matches must-have criteria, DISCARD IT
