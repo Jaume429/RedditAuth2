@@ -158,16 +158,16 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
 ]`;
 
 const PROXY_URLS = [
-  'http://aaubcdkx-gb-1:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-ca-2:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-de-3:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-fr-4:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-au-5:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-nl-6:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-it-7:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-es-8:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-be-9:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-at-10:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@136.0.170.174:6177',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@45.56.179.101:9305',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@136.0.170.174:6177',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@45.56.179.101:9305',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@136.0.170.174:6177',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@45.56.179.101:9305',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@136.0.170.174:6177',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@45.56.179.101:9305',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@136.0.170.174:6177',
+  'http://aaubcdkxstaticresidential:ecljgj60smyr@45.56.179.101:9305',
 ];
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const MAX_POST_AGE_MS = 24 * 60 * 60 * 1000;
