@@ -331,11 +331,30 @@ function buildCombinedQuery(queries) {
     .join(" OR ");
 }
 
+function oldRedditSearchUrl(subreddit, query, sort = "new", timeRange = "day") {
+  const url = new URL(`https://old.reddit.com/r/${subreddit}/search`);
+  url.searchParams.set("q", query);
+  url.searchParams.set("restrict_sr", "on");
+  url.searchParams.set("sort", sort);
+  url.searchParams.set("t", timeRange);
+  return url.toString();
+}
+
+function oldRedditListingUrl(subreddit, sort = "top_day") {
+  const key = String(sort || "").toLowerCase();
+  if (key === "hot") {
+    return `https://old.reddit.com/r/${subreddit}/hot/`;
+  }
+
+  return `https://old.reddit.com/r/${subreddit}/top/?sort=top&t=day`;
+}
+
 function listingUrlsForSubreddit(subreddit) {
   const urls = [
     {
       label: "top_day",
       url: `https://www.reddit.com/r/${subreddit}/top.json?limit=35&t=day`,
+      fallbackUrl: oldRedditListingUrl(subreddit, "top_day"),
     },
   ];
 
@@ -343,6 +362,7 @@ function listingUrlsForSubreddit(subreddit) {
     urls.push({
       label: "hot",
       url: `https://www.reddit.com/r/${subreddit}/hot.json?limit=25`,
+      fallbackUrl: oldRedditListingUrl(subreddit, "hot"),
     });
   }
 
@@ -405,6 +425,186 @@ function fetchTextViaProxy(url, proxyUrl, options = {}) {
     request.on("error", reject);
     request.end();
   });
+}
+
+function decodeHtmlEntities(value = "") {
+  const named = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+    "#39": "'",
+    nbsp: " ",
+  };
+
+  return String(value).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, entity) => {
+    const key = entity.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(named, key)) {
+      return named[key];
+    }
+
+    if (key.startsWith("#x")) {
+      const codePoint = Number.parseInt(key.slice(2), 16);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match;
+    }
+
+    if (key.startsWith("#")) {
+      const codePoint = Number.parseInt(key.slice(1), 10);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match;
+    }
+
+    return match;
+  });
+}
+
+function textFromHtml(html = "") {
+  return decodeHtmlEntities(
+    String(html)
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+function parseCommentCount(value = "") {
+  if (/no comments?/i.test(value)) return 0;
+  const match = String(value).replace(/,/g, "").match(/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function parseOldRedditSearchPosts(html, subreddit, source = {}) {
+  const posts = [];
+  const chunks = String(html || "").split(/<div class=" search-result search-result-link/i).slice(1);
+
+  for (const rawChunk of chunks) {
+    const chunk = `<div class=" search-result search-result-link${rawChunk}`;
+    const id = chunk.match(/data-fullname="t3_([a-z0-9]+)"/i)?.[1];
+    const titleMatch = chunk.match(/<a[^>]+href="([^"]+)"[^>]*class="search-title[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
+
+    if (!id || !titleMatch) {
+      continue;
+    }
+
+    const title = textFromHtml(titleMatch[2]);
+    const href = decodeHtmlEntities(titleMatch[1]);
+    const permalink = href.startsWith("http")
+      ? new URL(href).pathname
+      : href;
+    const commentsText = chunk.match(/class="search-comments[^"]*"[^>]*>([\s\S]*?)<\/a>/i)?.[1] || "";
+    const datetime = chunk.match(/<time[^>]+datetime="([^"]+)"/i)?.[1] || "";
+    const bodyHtml = chunk.match(/<div class="search-result-body">\s*<div class="md">([\s\S]*?)<\/div>\s*<\/div>/i)?.[1] || "";
+    const createdMs = Date.parse(datetime);
+    const comments = parseCommentCount(textFromHtml(commentsText));
+
+    posts.push({
+      id,
+      title,
+      selftext: textFromHtml(bodyHtml),
+      subreddit,
+      permalink,
+      url: `https://reddit.com${permalink}`,
+      created_utc: Number.isFinite(createdMs) ? Math.floor(createdMs / 1000) : Math.floor(Date.now() / 1000),
+      score: Math.max(5, comments),
+      num_comments: comments,
+      upvote_ratio: null,
+      source_query: source.query || null,
+      source_sort: source.sort || "old_search",
+      source_subreddit: subreddit,
+      source_scrape: "old_reddit_html",
+    });
+  }
+
+  return posts;
+}
+
+function parseOldRedditListingPosts(html, subreddit, source = {}) {
+  const posts = [];
+  const thingPattern = /<div[^>]+class="[^"]*\bthing\b[^"]*"[^>]+data-fullname="t3_([a-z0-9]+)"[\s\S]*?(?=<div[^>]+class="[^"]*\bthing\b|<div class="nav-buttons"|<\/body>)/gi;
+  let match;
+
+  while ((match = thingPattern.exec(String(html || ""))) !== null) {
+    const chunk = match[0];
+    const id = match[1];
+    const titleMatch = chunk.match(/<a[^>]+class="[^"]*\btitle\b[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+
+    if (!titleMatch) {
+      continue;
+    }
+
+    const title = textFromHtml(titleMatch[2]);
+    const href = decodeHtmlEntities(titleMatch[1]);
+    const permalink = chunk.match(/data-permalink="([^"]+)"/i)?.[1] ||
+      (href.includes("/comments/") ? new URL(href, "https://old.reddit.com").pathname : `/r/${subreddit}/comments/${id}`);
+    const commentsText = chunk.match(/<a[^>]+class="[^"]*\bcomments\b[^"]*"[^>]*>([\s\S]*?)<\/a>/i)?.[1] || "";
+    const scoreText = chunk.match(/<div[^>]+class="[^"]*\bscore unvoted\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i)?.[1] || "";
+    const datetime = chunk.match(/<time[^>]+datetime="([^"]+)"/i)?.[1] || "";
+    const createdMs = Date.parse(datetime);
+    const comments = parseCommentCount(textFromHtml(commentsText));
+    const score = Number.parseInt(textFromHtml(scoreText).replace(/,/g, ""), 10);
+
+    posts.push({
+      id,
+      title,
+      selftext: "",
+      subreddit,
+      permalink,
+      url: `https://reddit.com${permalink}`,
+      created_utc: Number.isFinite(createdMs) ? Math.floor(createdMs / 1000) : Math.floor(Date.now() / 1000),
+      score: Number.isFinite(score) ? score : Math.max(5, comments),
+      num_comments: comments,
+      upvote_ratio: null,
+      source_query: source.query || null,
+      source_sort: source.sort || "old_listing",
+      source_subreddit: subreddit,
+      source_scrape: "old_reddit_html",
+    });
+  }
+
+  return posts;
+}
+
+function parseOldRedditPosts(html, subreddit, source = {}) {
+  const searchPosts = parseOldRedditSearchPosts(html, subreddit, source);
+  if (searchPosts.length) {
+    return searchPosts;
+  }
+
+  return parseOldRedditListingPosts(html, subreddit, source);
+}
+
+async function fetchOldRedditFallback(target, subreddit) {
+  if (!target.fallbackUrl) {
+    return [];
+  }
+
+  const response = await fetchTextViaProxy(target.fallbackUrl, activeProxyUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      accept: 'text/html',
+    },
+    timeout: 15000
+  });
+
+  if (!response.ok) {
+    log(`Old Reddit fallback failed for r/${subreddit}: ${response.status}`);
+    return [];
+  }
+
+  const html = await response.text();
+  if (/You've been blocked by network security|Please wait for verification/i.test(html)) {
+    log(`Old Reddit fallback for r/${subreddit} returned a Reddit verification/block page`);
+    return [];
+  }
+
+  const parsed = parseOldRedditPosts(html, subreddit, target);
+  if (parsed.length) {
+    log(`Old Reddit fallback parsed ${parsed.length} post(s) for r/${subreddit} (${target.sort})`);
+  }
+
+  return parsed;
 }
 
 function isDatacenterIp(ip) {
@@ -536,6 +736,7 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
         query,
         sort: "top",
         url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=35&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
+        fallbackUrl: oldRedditSearchUrl(subreddit, query, "top", REDDIT_TOP_TIME_RANGE),
       });
     }
 
@@ -545,6 +746,7 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
         query,
         sort: "new",
         url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`,
+        fallbackUrl: oldRedditSearchUrl(subreddit, query, "new", "day"),
       });
     }
 
@@ -573,6 +775,21 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
             throw new ProxyUnavailableError(
               `Proxy unavailable while fetching r/${subreddit}: ${describeHttpStatus(response.status)}`
             );
+          }
+
+          if (response.status === 403) {
+            log(`Reddit JSON fetch blocked for r/${subreddit}: 403. Trying old Reddit fallback...`);
+            const fallbackPosts = await fetchOldRedditFallback(target, subreddit);
+            const now = Date.now();
+            for (const post of fallbackPosts) {
+              addPost(post, now, {
+                subreddit,
+                query: post.source_query || target.query,
+                sort: post.source_sort || target.sort,
+              });
+            }
+            await delay(900);
+            continue;
           }
 
           log(`Reddit fetch failed for r/${subreddit}: ${response.status}. Waiting before retry...`);
