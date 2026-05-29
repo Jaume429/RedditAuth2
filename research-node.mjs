@@ -184,6 +184,13 @@ class ProxyUnavailableError extends Error {
   }
 }
 
+class RedditRateLimitedError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "RedditRateLimitedError";
+  }
+}
+
 function log(message) {
   console.log(`[research-node] ${message}`);
 }
@@ -589,6 +596,10 @@ async function fetchOldRedditFallback(target, subreddit) {
   });
 
   if (!response.ok) {
+    if (response.status === 429) {
+      throw new RedditRateLimitedError(`Old Reddit fallback rate limited for r/${subreddit}: 429`);
+    }
+
     log(`Old Reddit fallback failed for r/${subreddit}: ${response.status}`);
     return [];
   }
@@ -777,9 +788,24 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
             );
           }
 
+          if (response.status === 429) {
+            log(`Reddit rate limited r/${subreddit}: 429. Stopping this research fetch pass to avoid more failed requests.`);
+            return posts;
+          }
+
           if (response.status === 403) {
             log(`Reddit JSON fetch blocked for r/${subreddit}: 403. Trying old Reddit fallback...`);
-            const fallbackPosts = await fetchOldRedditFallback(target, subreddit);
+            let fallbackPosts = [];
+            try {
+              fallbackPosts = await fetchOldRedditFallback(target, subreddit);
+            } catch (error) {
+              if (error instanceof RedditRateLimitedError) {
+                log(`${error.message}. Stopping this research fetch pass to cool down.`);
+                return posts;
+              }
+
+              throw error;
+            }
             const now = Date.now();
             for (const post of fallbackPosts) {
               addPost(post, now, {
@@ -820,6 +846,11 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
     } catch (error) {
       if (error instanceof ProxyUnavailableError) {
         throw error;
+      }
+
+      if (error instanceof RedditRateLimitedError) {
+        log(`${error.message}. Stopping this research fetch pass to cool down.`);
+        return posts;
       }
 
       log(`Error fetching r/${subreddit}: ${error.message}`);
@@ -1178,6 +1209,7 @@ function normalizeOpportunities(opportunities, knownPostUrls = [], sourcePosts =
         risk: normalizeRisk(item.risk),
         score: sourcePost.score || 0,
         comments: sourcePost.comments || 0,
+        createdAtMs: Number(sourcePost.created_utc || 0) * 1000 || null,
         upvoteRatio: sourcePost.upvote_ratio ?? null,
         localScore: sourcePost.local_score || 0,
         fitScore: sourcePost.fit_score || 0,

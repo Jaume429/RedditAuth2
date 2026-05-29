@@ -442,6 +442,35 @@ async function fetchPostMetadata(postUrl) {
   };
 }
 
+function hasMetadataBlockStatus(error) {
+  return /\bHTTP\s+(403|429)\b/i.test(String(error?.message || ''));
+}
+
+function numberOrDefault(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function metadataFromOpportunity(postUrl, opportunity) {
+  const createdAtMs = numberOrDefault(
+    opportunity.createdAtMs || Number(opportunity.created_utc || 0) * 1000,
+    Date.now()
+  );
+
+  return {
+    subreddit: opportunity.sourceSubreddit || opportunity.subreddit || extractSubreddit(postUrl),
+    createdAtMs,
+    title: opportunity.title || '',
+    locked: false,
+    archived: false,
+    score: numberOrDefault(opportunity.score),
+    comments: numberOrDefault(opportunity.comments || opportunity.num_comments),
+    awards: 0,
+    views: null,
+    upvoteRatio: Number.isFinite(Number(opportunity.upvoteRatio)) ? Number(opportunity.upvoteRatio) : null,
+  };
+}
+
 function buildMetricsSnapshot(metadata, label = 'posted') {
   return {
     label,
@@ -733,7 +762,18 @@ async function enrichOpportunity(opportunity) {
     throw new Error('Opportunity is missing postUrl or commentText.');
   }
 
-  const metadata = await fetchPostMetadata(postUrl);
+  let metadata;
+  try {
+    metadata = await fetchPostMetadata(postUrl);
+  } catch (error) {
+    if (!hasMetadataBlockStatus(error)) {
+      throw error;
+    }
+
+    metadata = metadataFromOpportunity(postUrl, opportunity);
+    log(`Using research metadata for ${postUrl} because Reddit metadata fetch failed: ${error.message}`);
+  }
+
   return {
     postUrl,
     commentText,
