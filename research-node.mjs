@@ -177,8 +177,25 @@ const PROXY_RETRY_DELAY_MS = 3000;
 const DATACENTER_IP_PREFIXES = ['34.', '35.', '52.', '54.', '18.', '3.', '44.'];
 let activeProxyUrl = PROXY_URLS[0];
 
+class ProxyUnavailableError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ProxyUnavailableError";
+  }
+}
+
 function log(message) {
   console.log(`[research-node] ${message}`);
+}
+
+function isProxyUnavailableStatus(status) {
+  return status === 402 || status === 407;
+}
+
+function describeHttpStatus(status) {
+  if (status === 402) return "HTTP 402 (proxy provider payment/credit issue)";
+  if (status === 407) return "HTTP 407 (proxy authentication failed)";
+  return `HTTP ${status}`;
 }
 
 function normalizePostUrl(postUrl) {
@@ -403,7 +420,7 @@ async function verifyProxyAttempt(proxyUrl) {
     });
 
     if (!response.ok) {
-      log(`Proxy verification failed: HTTP ${response.status}`);
+      log(`Proxy verification failed: ${describeHttpStatus(response.status)}`);
       return { ok: false, proxyUrl };
     }
 
@@ -552,6 +569,12 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
         });
 
         if (!response.ok) {
+          if (isProxyUnavailableStatus(response.status)) {
+            throw new ProxyUnavailableError(
+              `Proxy unavailable while fetching r/${subreddit}: ${describeHttpStatus(response.status)}`
+            );
+          }
+
           log(`Reddit fetch failed for r/${subreddit}: ${response.status}. Waiting before retry...`);
           await delay(6000);
           continue;
@@ -578,6 +601,10 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
         await delay(1200);
       }
     } catch (error) {
+      if (error instanceof ProxyUnavailableError) {
+        throw error;
+      }
+
       log(`Error fetching r/${subreddit}: ${error.message}`);
       await delay(6000);
     }

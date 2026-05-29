@@ -32,6 +32,12 @@ function log(message) {
   console.log(`[reddit-queue] ${message}`);
 }
 
+function describeHttpStatus(status) {
+  if (status === 402) return 'HTTP 402 (proxy provider payment/credit issue)';
+  if (status === 407) return 'HTTP 407 (proxy authentication failed)';
+  return `HTTP ${status}`;
+}
+
 function randomBetween(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -412,7 +418,7 @@ async function fetchPostMetadata(postUrl) {
   });
 
   if (!response.ok) {
-    throw new Error(`Could not fetch post metadata (${response.status}) for ${postUrl}`);
+    throw new Error(`Could not fetch post metadata (${describeHttpStatus(response.status)}) for ${postUrl}`);
   }
 
   const data = await response.json();
