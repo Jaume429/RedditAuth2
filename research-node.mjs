@@ -404,6 +404,12 @@ function proxyLabel(proxyUrl) {
   return match?.[1] || "unknown";
 }
 
+function nextProxyUrl(currentProxyUrl) {
+  const currentIndex = PROXY_URLS.indexOf(currentProxyUrl);
+  const nextIndex = (currentIndex + 1) % PROXY_URLS.length;
+  return PROXY_URLS[nextIndex];
+}
+
 function fetchTextViaProxy(url, proxyUrl, options = {}) {
   return new Promise((resolve, reject) => {
     const request = httpsRequest(url, {
@@ -794,27 +800,74 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
           }
 
           if (response.status === 403) {
-            log(`Reddit JSON fetch blocked for r/${subreddit}: 403. Trying old Reddit fallback...`);
-            let fallbackPosts = [];
-            try {
-              fallbackPosts = await fetchOldRedditFallback(target, subreddit);
-            } catch (error) {
-              if (error instanceof RedditRateLimitedError) {
-                log(`${error.message}. Stopping this research fetch pass to cool down.`);
-                return posts;
-              }
+            let proxy403Attempts = 1;
+            let lastResponse = response;
+            const MAX_PROXY_403_ATTEMPTS = 2;
 
-              throw error;
+            // Try up to 2 different proxies before falling back to old.reddit
+            while (proxy403Attempts < MAX_PROXY_403_ATTEMPTS && lastResponse.status === 403) {
+              activeProxyUrl = nextProxyUrl(activeProxyUrl);
+              proxy403Attempts += 1;
+              
+              log(`Reddit JSON fetch blocked for r/${subreddit}: 403. Trying alternative proxy (${proxyLabel(activeProxyUrl)})...`);
+              
+              try {
+                lastResponse = await fetchTextViaProxy(target.url, activeProxyUrl, {
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                  },
+                  timeout: 15000
+                });
+                
+                if (lastResponse.ok) {
+                  // Success with new proxy - process the response
+                  const data = await lastResponse.json();
+                  const now = Date.now();
+                  
+                  for (const child of data.data?.children || []) {
+                    addPost(child.data, now, {
+                      subreddit,
+                      query: target.query,
+                      sort: target.sort,
+                    });
+                  }
+                  
+                  await delay(450);
+                  break; // Exit retry loop - success
+                }
+              } catch (error) {
+                log(`Error retrying with proxy during 403 handling for r/${subreddit}: ${error.message}`);
+                lastResponse = { ok: false, status: 999 }; // Treat errors as failed attempt
+              }
+              
+              await delay(900);
             }
-            const now = Date.now();
-            for (const post of fallbackPosts) {
-              addPost(post, now, {
-                subreddit,
-                query: post.source_query || target.query,
-                sort: post.source_sort || target.sort,
-              });
+            
+            // If still 403 after trying proxies, attempt old.reddit fallback
+            if (!lastResponse.ok && lastResponse.status === 403) {
+              log(`Reddit JSON fetch blocked for r/${subreddit}: 403 on all ${proxy403Attempts} proxy attempt(s). Trying old Reddit fallback...`);
+              let fallbackPosts = [];
+              try {
+                fallbackPosts = await fetchOldRedditFallback(target, subreddit);
+              } catch (error) {
+                if (error instanceof RedditRateLimitedError) {
+                  log(`${error.message}. Stopping this research fetch pass to cool down.`);
+                  return posts;
+                }
+
+                throw error;
+              }
+              const now = Date.now();
+              for (const post of fallbackPosts) {
+                addPost(post, now, {
+                  subreddit,
+                  query: post.source_query || target.query,
+                  sort: post.source_sort || target.sort,
+                });
+              }
+              await delay(900);
             }
-            await delay(900);
+            
             continue;
           }
 
