@@ -410,8 +410,13 @@ function parseRedditPostsFromHtml(html) {
     const $ = cheerioLoad(html);
     const posts = [];
     
+    log(`[parseRedditPostsFromHtml] HTML size: ${html.length} bytes`);
+    
     // Reddit HTML structure - shreddit-post is the post element
-    $('shreddit-post').each((_, el) => {
+    const postElements = $('shreddit-post');
+    log(`[parseRedditPostsFromHtml] Found ${postElements.length} shreddit-post elements`);
+    
+    postElements.each((idx, el) => {
       const $post = $(el);
       const title = $post.attr('title') || '';
       const postId = $post.attr('id') || '';
@@ -422,6 +427,10 @@ function parseRedditPostsFromHtml(html) {
       const subreddit = $post.attr('subreddit') || '';
       const author = $post.attr('author') || '';
       const created = parseInt($post.attr('created-timestamp') || '0');
+      
+      if (idx === 0) {
+        log(`[parseRedditPostsFromHtml] First post attributes: title="${title.substring(0, 50)}", id="${postId}", upvotes="${upvotes}"`);
+      }
       
       if (title && postId) {
         posts.push({
@@ -439,6 +448,7 @@ function parseRedditPostsFromHtml(html) {
       }
     });
     
+    log(`[parseRedditPostsFromHtml] Extracted ${posts.length} valid posts`);
     return posts;
   } catch (error) {
     log(`Error parsing HTML posts: ${error.message}`);
