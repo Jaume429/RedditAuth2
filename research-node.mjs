@@ -886,6 +886,7 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
         
         if (target.isHtml) {
           try {
+            log(`Attempting direct HTML fetch for r/${subreddit}...`);
             response = await fetchTextDirect(target.url, {
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -896,8 +897,9 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
               },
               timeout: 15000
             });
+            log(`Direct fetch completed for r/${subreddit}: Status ${response.status}`);
           } catch (directError) {
-            log(`Direct fetch failed for r/${subreddit}, trying via proxy: ${directError.message}`);
+            log(`Direct fetch error for r/${subreddit}: ${directError.message}. Trying via proxy...`);
             response = await fetchTextViaProxy(target.url, activeProxyUrl, {
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
