@@ -21,10 +21,21 @@ QUEUE_FILE = ROOT / "queue.json"
 GUMROAD_TOKEN = "3oLvgbdcBVg-ka0klN-3LEe9f1TeNzFc5IOOlSCfYcA"
 GUMROAD_PRODUCT_ID = "dicmd"
 
-PROXY_HOST = "31.59.20.176"
-PROXY_PORT = 6754
+PROXY_URLS = [
+    ("38.154.203.95", 5863),
+    ("198.105.121.200", 6462),
+    ("64.137.96.74", 6641),
+    ("209.127.138.10", 5784),
+    ("38.154.185.97", 6370),
+    ("84.247.60.125", 6095),
+    ("142.111.67.146", 5611),
+    ("191.96.254.138", 6185),
+    ("31.58.9.4", 6077),
+    ("64.137.10.153", 5803),
+]
 PROXY_USER = "aaubcdkx"
 PROXY_PASS = "ecljgj60smyr"
+_proxy_index = 0
 
 
 def normalize_post_url(post_url):
@@ -209,6 +220,7 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
             self.send_json({"error": str(e)}, status=500)
 
     def proxy_reddit(self):
+        global _proxy_index
         params = parse_qs(urlparse(self.path).query)
         subreddit = params.get("subreddit", [""])[0].strip()
         query = params.get("query", [""])[0].strip()
@@ -224,49 +236,61 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
         request = Request(
             reddit_url,
             headers={
-                "User-Agent": "RedditScanner/1.0",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Accept": "application/json",
+                "Accept-Language": "en-US,en;q=0.5",
             },
         )
 
-        try:
-            proxy_handler = urllib.request.ProxyHandler({
-                'http': f'http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}',
-                'https': f'http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}'
-            })
-            opener = urllib.request.build_opener(proxy_handler)
-            response = opener.open(request, timeout=12)
-            body = response.read()
-            self.send_response(response.status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-            response.close()
-        except HTTPError as error:
-            if error.code == 403:
-                # Return empty results array for 403 Forbidden instead of propagating error
-                print(f"[reddit-proxy] 403 blocked for r/{subreddit}", flush=True)
-                self.send_response(200)
+        # Try proxies in rotation, skip on failure
+        last_error = None
+        for _ in range(len(PROXY_URLS)):
+            host, port = PROXY_URLS[_proxy_index % len(PROXY_URLS)]
+            proxy_url = f"http://{PROXY_USER}:{PROXY_PASS}@{host}:{port}"
+            try:
+                proxy_handler = urllib.request.ProxyHandler({
+                    'http': proxy_url,
+                    'https': proxy_url,
+                })
+                opener = urllib.request.build_opener(proxy_handler)
+                response = opener.open(request, timeout=12)
+                body = response.read()
+                self.send_response(response.status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
                 self.end_headers()
-                self.wfile.write(b'{"data": {"children": [], "after": null}}')
-            else:
-                self.send_response(error.code)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(error.read() or b'{"error":"Reddit request failed"}')
-        except URLError as error:
-            self.send_response(502)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.end_headers()
-            message = str(error.reason).replace('"', "'")
-            self.wfile.write(f'{{"error":"Reddit network failed: {message}"}}'.encode())
-        except socket.timeout:
-            self.send_response(504)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(b'{"error":"Reddit request timed out"}')
+                self.wfile.write(body)
+                response.close()
+                return
+            except HTTPError as error:
+                if error.code == 403:
+                    print(f"[reddit-proxy] 403 blocked for r/{subreddit} via {host}", flush=True)
+                    _proxy_index += 1
+                    last_error = error
+                    continue
+                elif error.code in (402, 407):
+                    print(f"[reddit-proxy] Proxy auth/credit issue {error.code} via {host}", flush=True)
+                    _proxy_index += 1
+                    last_error = error
+                    continue
+                else:
+                    self.send_response(error.code)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(error.read() or b'{"error":"Reddit request failed"}')
+                    return
+            except (URLError, socket.timeout) as error:
+                print(f"[reddit-proxy] Network error via {host}: {error}", flush=True)
+                _proxy_index += 1
+                last_error = error
+                continue
+
+        # All proxies failed
+        print(f"[reddit-proxy] All proxies failed for r/{subreddit}", flush=True)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b'{"data": {"children": [], "after": null}}')
 
 
 handler = partial(NoCacheHandler, directory=str(ROOT))
