@@ -870,9 +870,8 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       targets.push({
         query,
         sort: "top",
-        url: `https://www.reddit.com/r/${subreddit}/search?q=${encodeURIComponent(query)}&sort=top&limit=35&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
+        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=35&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
         fallbackUrl: oldRedditSearchUrl(subreddit, query, "top", REDDIT_TOP_TIME_RANGE),
-        isHtml: true,
       });
     }
 
@@ -881,9 +880,8 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       targets.push({
         query,
         sort: "new",
-        url: `https://www.reddit.com/r/${subreddit}/search?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`,
+        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`,
         fallbackUrl: oldRedditSearchUrl(subreddit, query, "new", "day"),
-        isHtml: true,
       });
     }
 
