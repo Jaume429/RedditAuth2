@@ -412,9 +412,18 @@ function parseRedditPostsFromHtml(html) {
     
     log(`[parseRedditPostsFromHtml] HTML size: ${html.length} bytes`);
     
+    // Debug: log first 1000 chars to see HTML structure
+    log(`[parseRedditPostsFromHtml] First 1000 chars: ${html.substring(0, 1000)}`);
+    
     // Reddit HTML structure - shreddit-post is the post element
     const postElements = $('shreddit-post');
     log(`[parseRedditPostsFromHtml] Found ${postElements.length} shreddit-post elements`);
+    
+    // Debug: check what elements actually exist
+    log(`[parseRedditPostsFromHtml] Looking for alternatives...`);
+    log(`[parseRedditPostsFromHtml] article elements: ${$('article').length}`);
+    log(`[parseRedditPostsFromHtml] div[data-testid="post"] elements: ${$('div[data-testid="post"]').length}`);
+    log(`[parseRedditPostsFromHtml] [id^="t3_"] elements: ${$('[id^="t3_"]').length}`);
     
     postElements.each((idx, el) => {
       const $post = $(el);
