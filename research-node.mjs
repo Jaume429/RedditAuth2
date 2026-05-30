@@ -935,16 +935,16 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
           }
 
           if (response.status === 403) {
-            let proxy403Attempts = 1;
+            let proxy403Attempts = 0;
             let lastResponse = response;
-            const MAX_PROXY_403_ATTEMPTS = 2;
+            const MAX_PROXY_403_ATTEMPTS = target.isHtml ? 0 : 2; // Skip proxy retries for HTML (403 on direct = no proxy help)
 
-            // Try up to 2 different proxies before falling back to old.reddit
+            // Try up to 2 different proxies before falling back to old.reddit (JSON only, not HTML)
             while (proxy403Attempts < MAX_PROXY_403_ATTEMPTS && lastResponse.status === 403) {
               activeProxyUrl = nextProxyUrl(activeProxyUrl);
               proxy403Attempts += 1;
               
-              log(`Reddit HTML fetch blocked for r/${subreddit}: 403. Trying alternative proxy (${proxyLabel(activeProxyUrl)})...`);
+              log(`Reddit JSON fetch blocked for r/${subreddit}: 403. Trying alternative proxy (${proxyLabel(activeProxyUrl)})...`);
               
               try {
                 lastResponse = await fetchTextViaProxy(target.url, activeProxyUrl, {
@@ -994,9 +994,9 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
               await delay(900);
             }
             
-            // If still 403 after trying proxies, attempt old.reddit fallback
+            // If still 403 after trying proxies (or skipped proxies for HTML), attempt old.reddit fallback
             if (!lastResponse.ok && lastResponse.status === 403) {
-              log(`Reddit JSON fetch blocked for r/${subreddit}: 403 on all ${proxy403Attempts} proxy attempt(s). Trying old Reddit fallback...`);
+              log(`Reddit fetch blocked for r/${subreddit}: 403. Trying old Reddit fallback...`);
               let fallbackPosts = [];
               try {
                 fallbackPosts = await fetchOldRedditFallback(target, subreddit);
