@@ -410,22 +410,22 @@ function parseRedditPostsFromHtml(html) {
   try {
     const $ = cheerioLoad(html);
     const posts = [];
-    
+
     log(`[parseRedditPostsFromHtml] HTML size: ${html.length} bytes`);
-    
+
     // Debug: log first 1000 chars to see HTML structure
     log(`[parseRedditPostsFromHtml] First 1000 chars: ${html.substring(0, 1000)}`);
-    
+
     // Reddit HTML structure - shreddit-post is the post element
     const postElements = $('shreddit-post');
     log(`[parseRedditPostsFromHtml] Found ${postElements.length} shreddit-post elements`);
-    
+
     // Debug: check what elements actually exist
     log(`[parseRedditPostsFromHtml] Looking for alternatives...`);
     log(`[parseRedditPostsFromHtml] article elements: ${$('article').length}`);
     log(`[parseRedditPostsFromHtml] div[data-testid="post"] elements: ${$('div[data-testid="post"]').length}`);
     log(`[parseRedditPostsFromHtml] [id^="t3_"] elements: ${$('[id^="t3_"]').length}`);
-    
+
     postElements.each((idx, el) => {
       const $post = $(el);
       const title = $post.attr('title') || '';
@@ -437,11 +437,11 @@ function parseRedditPostsFromHtml(html) {
       const subreddit = $post.attr('subreddit') || '';
       const author = $post.attr('author') || '';
       const created = parseInt($post.attr('created-timestamp') || '0');
-      
+
       if (idx === 0) {
         log(`[parseRedditPostsFromHtml] First post attributes: title="${title.substring(0, 50)}", id="${postId}", upvotes="${upvotes}"`);
       }
-      
+
       if (title && postId) {
         posts.push({
           id: postId,
@@ -457,7 +457,7 @@ function parseRedditPostsFromHtml(html) {
         });
       }
     });
-    
+
     log(`[parseRedditPostsFromHtml] Extracted ${posts.length} valid posts`);
     return posts;
   } catch (error) {
@@ -474,7 +474,7 @@ function nextProxyUrl(currentProxyUrl) {
 
 function fetchTextDirect(url, options = {}, redirectCount = 0) {
   const MAX_REDIRECTS = 5;
-  
+
   return new Promise((resolve, reject) => {
     const request = httpsRequest(url, {
       method: "GET",
@@ -488,12 +488,12 @@ function fetchTextDirect(url, options = {}, redirectCount = 0) {
           reject(new Error(`Redirect status ${response.statusCode} but no Location header`));
           return;
         }
-        
+
         // Follow redirect
         fetchTextDirect(redirectUrl, options, redirectCount + 1).then(resolve).catch(reject);
         return;
       }
-      
+
       const chunks = [];
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => {
@@ -517,7 +517,7 @@ function fetchTextDirect(url, options = {}, redirectCount = 0) {
 
 function fetchTextViaProxy(url, proxyUrl, options = {}, redirectCount = 0) {
   const MAX_REDIRECTS = 5;
-  
+
   return new Promise((resolve, reject) => {
     const request = httpsRequest(url, {
       method: "GET",
@@ -532,12 +532,12 @@ function fetchTextViaProxy(url, proxyUrl, options = {}, redirectCount = 0) {
           reject(new Error(`Redirect status ${response.statusCode} but no Location header`));
           return;
         }
-        
+
         // Follow redirect
         fetchTextViaProxy(redirectUrl, proxyUrl, options, redirectCount + 1).then(resolve).catch(reject);
         return;
       }
-      
+
       const chunks = [];
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => {
@@ -762,7 +762,7 @@ async function verifyProxyAttempt(proxyUrl) {
 
     const text = await response.text();
     const ipMatch = text.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
-    
+
     if (ipMatch) {
       const proxyIp = ipMatch[0];
       log(`Proxy is working. Detected IP: ${proxyIp}`);
@@ -885,7 +885,7 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
         url: oldRedditListingUrl(subreddit, "hot"),
       });
     }
-    
+
     try {
       const uniqueBefore = posts.length;
       log(`Fetching r/${subreddit}: ${queries.join(", ")} (${targets.length} request(s))...`);
@@ -1137,8 +1137,8 @@ function shortlistPosts(posts, learning = {}) {
       // Engagement score sin límites - recompensa posts muy calientes
       const engagementScore = (post.comments * 0.8) + (post.score * 0.4);
       // Bonus especial para r/claudecode - el mejor subreddit para visitas
-      const subredditScore = String(post.subreddit).toLowerCase() === "claudecode" ? 35 : 
-                            ["vibecoding", "claudeai"].includes(String(post.subreddit).toLowerCase()) ? 20 : 0;
+      const subredditScore = String(post.subreddit).toLowerCase() === "claudecode" ? 35 :
+        ["vibecoding", "claudeai"].includes(String(post.subreddit).toLowerCase()) ? 20 : 0;
       const learnedSubredditScore = learnedSubredditScores.get(String(post.subreddit).toLowerCase()) || 0;
       const learnedTermScore = learnedTerms.reduce(
         (score, term) => score + (text.includes(term) ? 6 : 0),
@@ -1247,8 +1247,8 @@ function shortlistPostsV2(posts, learning = {}) {
       const ratioScore = post.upvote_ratio ? Math.max(0, post.upvote_ratio - 0.7) * 45 : 0;
       const subredditKey = String(post.subreddit).toLowerCase();
       const subredditScore = subredditKey === "claudecode" ? 42 :
-                            ["vibecoding", "claudeai"].includes(subredditKey) ? 28 :
-                            ["sideproject", "nocode"].includes(subredditKey) ? 16 : 0;
+        ["vibecoding", "claudeai"].includes(subredditKey) ? 28 :
+          ["sideproject", "nocode"].includes(subredditKey) ? 16 : 0;
       const learnedSubredditScore = learnedSubredditScores.get(subredditKey) || 0;
       const learnedTermScore = learnedTerms.reduce(
         (score, term) => score + (text.includes(term) ? 6 : 0),
@@ -1352,7 +1352,7 @@ ${JSON.stringify(posts, null, 2)}`,
 
     const data = await response.json();
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
+
     if (!rawText) {
       throw new Error("Gemini returned an empty response.");
     }
@@ -1395,14 +1395,14 @@ function normalizeOpportunities(opportunities, knownPostUrls = [], sourcePosts =
         log(`Skipping post from blocked subreddit r/${subreddit}: ${postUrl}`);
         return false;
       }
-      
+
       subredditCount[subreddit] = (subredditCount[subreddit] || 0) + 1;
-      
+
       if (subredditCount[subreddit] > MAX_POSTS_PER_SUBREDDIT) {
         log(`Skipping post from r/${subreddit} - already have ${MAX_POSTS_PER_SUBREDDIT} from this subreddit today`);
         return false;
       }
-      
+
       return true;
     })
     .map((item) => {
@@ -1462,7 +1462,7 @@ export async function runResearch(options = {}) {
 
       const posts = await fetchRedditPosts(learning, attempt);
       log(`Fetched ${posts.length} top/relevant recent posts`);
-      
+
       if (!posts.length) {
         log("No posts found in this attempt");
         if (attempt < MAX_RESEARCH_ATTEMPTS) {
@@ -1473,7 +1473,7 @@ export async function runResearch(options = {}) {
 
       const shortlisted = shortlistPostsV2(posts, learning);
       log(`Shortlisted ${shortlisted.length} posts for analysis`);
-      
+
       if (!shortlisted.length) {
         log("No posts passed shortlist filtering in this attempt");
         if (attempt < MAX_RESEARCH_ATTEMPTS) {
@@ -1482,9 +1482,10 @@ export async function runResearch(options = {}) {
         continue;
       }
 
-      const opportunities = await analyzeWithGemini(shortlisted, knownPostUrls, learning);
-      const normalized = normalizeOpportunities(opportunities, knownPostUrls, shortlisted);
-      
+      const currentKnownUrls = [...knownPostUrls, ...allOpportunities.map(o => o.reddit_url || o.url)];
+      const opportunities = await analyzeWithGemini(shortlisted, currentKnownUrls, learning);
+      const normalized = normalizeOpportunities(opportunities, currentKnownUrls, shortlisted);
+
       log(`Found ${normalized.length} opportunities in this attempt`);
       for (const opportunity of normalized) {
         log(

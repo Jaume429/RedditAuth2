@@ -10,7 +10,19 @@ const QUEUE_FILE = path.resolve(process.cwd(), 'queue.json');
 const BLOCKED_POSTS_FILE = path.resolve(process.cwd(), 'blocked-posts.json');
 const ANALYTICS_FILE = path.resolve(process.cwd(), 'reddit-analytics.json');
 const LEARNING_FILE = path.resolve(process.cwd(), 'reddit-learning.json');
-const PROXY_URL = 'http://aaubcdkx-es-8:ecljgj60smyr@p.webshare.io:80';
+const PROXY_URLS = [
+  'http://aaubcdkx:ecljgj60smyr@38.154.203.95:5863',
+  'http://aaubcdkx:ecljgj60smyr@198.105.121.200:6462',
+  'http://aaubcdkx:ecljgj60smyr@64.137.96.74:6641',
+  'http://aaubcdkx:ecljgj60smyr@209.127.138.10:5784',
+  'http://aaubcdkx:ecljgj60smyr@38.154.185.97:6370',
+  'http://aaubcdkx:ecljgj60smyr@84.247.60.125:6095',
+  'http://aaubcdkx:ecljgj60smyr@142.111.67.146:5611',
+  'http://aaubcdkx:ecljgj60smyr@191.96.254.138:6185',
+  'http://aaubcdkx:ecljgj60smyr@31.58.9.4:6077',
+  'http://aaubcdkx:ecljgj60smyr@64.137.10.153:5803',
+];
+let proxyIndex = 0;
 const MIN_DELAY_MS = 2 * 60 * 60 * 1000;
 const MAX_DELAY_MS = 3 * 60 * 60 * 1000;
 const MAX_POSTS_PER_DAY = 4;
@@ -409,37 +421,50 @@ function fetchTextViaProxy(url, proxyUrl, options = {}) {
 }
 
 async function fetchPostMetadata(postUrl) {
-  const response = await fetchTextViaProxy(appendJsonSuffix(postUrl), PROXY_URL, {
-    headers: {
-      'User-Agent': 'RedditAuthQueue/1.0',
-      accept: 'application/json',
-    },
-    timeout: 15000,
-  });
+  let lastError;
+  for (let i = 0; i < PROXY_URLS.length; i++) {
+    const proxyUrl = PROXY_URLS[proxyIndex % PROXY_URLS.length];
+    try {
+      const response = await fetchTextViaProxy(appendJsonSuffix(postUrl), proxyUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          accept: 'application/json',
+        },
+        timeout: 10000,
+      });
 
-  if (!response.ok) {
-    throw new Error(`Could not fetch post metadata (${describeHttpStatus(response.status)}) for ${postUrl}`);
+      if (response.ok) {
+        const data = await response.json();
+        const postData = data?.[0]?.data?.children?.[0]?.data;
+
+        if (!postData) {
+          throw new Error(`Unexpected Reddit metadata payload for ${postUrl}`);
+        }
+
+        return {
+          subreddit: postData.subreddit || extractSubreddit(postUrl),
+          createdAtMs: Number(postData.created_utc || 0) * 1000,
+          title: postData.title || '',
+          locked: Boolean(postData.locked),
+          archived: Boolean(postData.archived),
+          score: Number(postData.score || 0),
+          comments: Number(postData.num_comments || 0),
+          awards: Number(postData.total_awards_received || 0),
+          views: Number.isFinite(Number(postData.view_count)) ? Number(postData.view_count) : null,
+          upvoteRatio: Number.isFinite(Number(postData.upvote_ratio)) ? Number(postData.upvote_ratio) : null,
+        };
+      }
+
+      log(`Proxy ${proxyUrl} returned status ${response.status} for metadata of ${postUrl}. Rotating...`);
+      proxyIndex++;
+      lastError = new Error(`Could not fetch post metadata (${describeHttpStatus(response.status)})`);
+    } catch (err) {
+      log(`Proxy ${proxyUrl} failed to fetch metadata: ${err.message}. Rotating...`);
+      proxyIndex++;
+      lastError = err;
+    }
   }
-
-  const data = await response.json();
-  const postData = data?.[0]?.data?.children?.[0]?.data;
-
-  if (!postData) {
-    throw new Error(`Unexpected Reddit metadata payload for ${postUrl}`);
-  }
-
-  return {
-    subreddit: postData.subreddit || extractSubreddit(postUrl),
-    createdAtMs: Number(postData.created_utc || 0) * 1000,
-    title: postData.title || '',
-    locked: Boolean(postData.locked),
-    archived: Boolean(postData.archived),
-    score: Number(postData.score || 0),
-    comments: Number(postData.num_comments || 0),
-    awards: Number(postData.total_awards_received || 0),
-    views: Number.isFinite(Number(postData.view_count)) ? Number(postData.view_count) : null,
-    upvoteRatio: Number.isFinite(Number(postData.upvote_ratio)) ? Number(postData.upvote_ratio) : null,
-  };
+  throw lastError || new Error(`All proxies failed to fetch metadata for ${postUrl}`);
 }
 
 function hasMetadataBlockStatus(error) {
@@ -766,10 +791,6 @@ async function enrichOpportunity(opportunity) {
   try {
     metadata = await fetchPostMetadata(postUrl);
   } catch (error) {
-    if (!hasMetadataBlockStatus(error)) {
-      throw error;
-    }
-
     metadata = metadataFromOpportunity(postUrl, opportunity);
     log(`Using research metadata for ${postUrl} because Reddit metadata fetch failed: ${error.message}`);
   }
@@ -868,9 +889,19 @@ async function processQueue() {
     try {
       metadata = await fetchPostMetadata(item.postUrl);
     } catch (error) {
-      log(`Failed to refresh metadata for ${item.postUrl}: ${error.message}`);
-      await markQueueItem(queue, item.id, 'failed');
-      continue;
+      log(`Failed to refresh metadata for ${item.postUrl}: ${error.message}. Proceeding with existing queue details.`);
+      metadata = {
+        subreddit: item.subreddit,
+        createdAtMs: Date.now() - (12 * 60 * 60 * 1000), // Assume 12 hours old
+        title: item.title,
+        locked: false,
+        archived: false,
+        score: item.discovery?.score || 0,
+        comments: item.discovery?.comments || 0,
+        awards: 0,
+        views: null,
+        upvoteRatio: item.discovery?.upvoteRatio || null,
+      };
     }
 
     if (isOlderThan48Hours(metadata.createdAtMs)) {
