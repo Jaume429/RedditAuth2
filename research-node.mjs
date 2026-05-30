@@ -898,41 +898,28 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       log(`Fetching r/${subreddit}: ${queries.join(", ")} (${targets.length} request(s))...`);
 
       for (const target of targets) {
-        // For HTML scraping: try direct first (no proxy), then fallback to proxy
+        // Always try direct first (no proxy), then fallback to proxy if needed
         let response;
         
-        if (target.isHtml) {
-          try {
-            log(`Attempting direct HTML fetch for r/${subreddit}...`);
-            response = await fetchTextDirect(target.url, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Referer': 'https://www.reddit.com/',
-                'DNT': '1'
-              },
-              timeout: 15000
-            });
-            log(`Direct fetch completed for r/${subreddit}: Status ${response.status}`);
-          } catch (directError) {
-            log(`Direct fetch error for r/${subreddit}: ${directError.message}. Trying via proxy...`);
-            response = await fetchTextViaProxy(target.url, activeProxyUrl, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Referer': 'https://www.reddit.com/',
-                'DNT': '1'
-              },
-              timeout: 15000
-            });
-          }
-        } else {
+        try {
+          log(`Attempting direct fetch for r/${subreddit}...`);
+          response = await fetchTextDirect(target.url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Referer': 'https://www.reddit.com/',
+              'DNT': '1'
+            },
+            timeout: 15000
+          });
+          log(`Direct fetch completed for r/${subreddit}: Status ${response.status}`);
+        } catch (directError) {
+          log(`Direct fetch error for r/${subreddit}: ${directError.message}. Trying via proxy...`);
           response = await fetchTextViaProxy(target.url, activeProxyUrl, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'application/json',
+              'Accept': 'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.9',
               'Referer': 'https://www.reddit.com/',
               'DNT': '1'
@@ -956,20 +943,21 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
           if (response.status === 403) {
             let proxy403Attempts = 0;
             let lastResponse = response;
-            const MAX_PROXY_403_ATTEMPTS = target.isHtml ? 0 : 2; // Skip proxy retries for HTML (403 on direct = no proxy help)
+            const isJsonEndpoint = target.url.includes('.json');
+            const MAX_PROXY_403_ATTEMPTS = isJsonEndpoint ? 0 : 2; // Skip proxy retries for JSON (403 on direct = no proxy help)
 
             // Try up to 2 different proxies before falling back to old.reddit (JSON only, not HTML)
             while (proxy403Attempts < MAX_PROXY_403_ATTEMPTS && lastResponse.status === 403) {
               activeProxyUrl = nextProxyUrl(activeProxyUrl);
               proxy403Attempts += 1;
               
-              log(`Reddit JSON fetch blocked for r/${subreddit}: 403. Trying alternative proxy (${proxyLabel(activeProxyUrl)})...`);
+              log(`Reddit fetch blocked for r/${subreddit}: 403. Trying alternative proxy (${proxyLabel(activeProxyUrl)})...`);
               
               try {
                 lastResponse = await fetchTextViaProxy(target.url, activeProxyUrl, {
                   headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': target.isHtml ? 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' : 'application/json',
+                    'Accept': 'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.9',
                     'Referer': 'https://www.reddit.com/',
                     'DNT': '1'
@@ -980,10 +968,7 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
                 if (lastResponse.ok) {
                   // Success with new proxy - process the response
                   let parsedPosts = [];
-                  if (target.isHtml) {
-                    const html = await lastResponse.text();
-                    parsedPosts = parseRedditPostsFromHtml(html);
-                  } else {
+                  if (isJsonEndpoint) {
                     try {
                       const data = await lastResponse.json();
                       parsedPosts = data.data?.children?.map(child => child.data) || [];
@@ -991,6 +976,9 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
                       const html = await lastResponse.text();
                       parsedPosts = parseRedditPostsFromHtml(html);
                     }
+                  } else {
+                    const html = await lastResponse.text();
+                    parsedPosts = parseRedditPostsFromHtml(html);
                   }
                   
                   const now = Date.now();
@@ -1046,15 +1034,12 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
           continue;
         }
 
+        const isJsonEndpoint = target.url.includes('.json');
         const now = Date.now();
         let parsedPosts = [];
 
-        if (target.isHtml) {
-          // Parse HTML response
-          const html = await response.text();
-          parsedPosts = parseRedditPostsFromHtml(html);
-        } else {
-          // Parse JSON response (fallback)
+        if (isJsonEndpoint) {
+          // Parse JSON response
           try {
             const data = await response.json();
             parsedPosts = data.data?.children?.map(child => child.data) || [];
@@ -1063,6 +1048,10 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
             const html = await response.text();
             parsedPosts = parseRedditPostsFromHtml(html);
           }
+        } else {
+          // Parse HTML response
+          const html = await response.text();
+          parsedPosts = parseRedditPostsFromHtml(html);
         }
 
         for (const postData of parsedPosts) {
