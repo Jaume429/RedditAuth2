@@ -865,13 +865,13 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
     const queryChunks = chunkArray(queries, 3);
     const isHighPriority = HIGH_PRIORITY_SUBREDDITS.has(String(subreddit || '').toLowerCase());
 
+    // Use old.reddit directly for all searches - no proxies needed
     for (const queryChunk of queryChunks) {
       const query = buildCombinedQuery(queryChunk);
       targets.push({
         query,
         sort: "top",
-        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=35&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
-        fallbackUrl: oldRedditSearchUrl(subreddit, query, "top", REDDIT_TOP_TIME_RANGE),
+        url: oldRedditSearchUrl(subreddit, query, "top", REDDIT_TOP_TIME_RANGE),
       });
     }
 
@@ -880,16 +880,22 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       targets.push({
         query,
         sort: "new",
-        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`,
-        fallbackUrl: oldRedditSearchUrl(subreddit, query, "new", "day"),
+        url: oldRedditSearchUrl(subreddit, query, "new", "day"),
       });
     }
 
-    for (const listing of listingUrlsForSubreddit(subreddit)) {
+    // Use old.reddit directly for listings
+    targets.push({
+      query: null,
+      sort: "top_day",
+      url: oldRedditListingUrl(subreddit, "top_day"),
+    });
+
+    if (isHighPriority) {
       targets.push({
         query: null,
-        sort: listing.label,
-        url: listing.url,
+        sort: "hot",
+        url: oldRedditListingUrl(subreddit, "hot"),
       });
     }
     
@@ -898,191 +904,70 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       log(`Fetching r/${subreddit}: ${queries.join(", ")} (${targets.length} request(s))...`);
 
       for (const target of targets) {
-        // Always try direct first (no proxy), then fallback to proxy if needed
-        let response;
-        
         try {
-          log(`Attempting direct fetch for r/${subreddit}...`);
-          response = await fetchTextDirect(target.url, {
+          log(`Fetching ${target.sort} for r/${subreddit}...`);
+          const response = await fetchTextDirect(target.url, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.9',
               'Referer': 'https://www.reddit.com/',
               'DNT': '1'
             },
             timeout: 15000
           });
-          log(`Direct fetch completed for r/${subreddit}: Status ${response.status}`);
-        } catch (directError) {
-          log(`Direct fetch error for r/${subreddit}: ${directError.message}. Trying via proxy...`);
-          response = await fetchTextViaProxy(target.url, activeProxyUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.9',
-              'Referer': 'https://www.reddit.com/',
-              'DNT': '1'
-            },
-            timeout: 15000
-          });
-        }
 
-        if (!response.ok) {
-          if (isProxyUnavailableStatus(response.status)) {
-            throw new ProxyUnavailableError(
-              `Proxy unavailable while fetching r/${subreddit}: ${describeHttpStatus(response.status)}`
-            );
-          }
-
-          if (response.status === 429) {
-            log(`Reddit rate limited r/${subreddit}: 429. Stopping this research fetch pass to avoid more failed requests.`);
-            return posts;
-          }
-
-          if (response.status === 403) {
-            let proxy403Attempts = 0;
-            let lastResponse = response;
-            const isJsonEndpoint = target.url.includes('.json');
-            const MAX_PROXY_403_ATTEMPTS = isJsonEndpoint ? 0 : 2; // Skip proxy retries for JSON (403 on direct = no proxy help)
-
-            // Try up to 2 different proxies before falling back to old.reddit (JSON only, not HTML)
-            while (proxy403Attempts < MAX_PROXY_403_ATTEMPTS && lastResponse.status === 403) {
-              activeProxyUrl = nextProxyUrl(activeProxyUrl);
-              proxy403Attempts += 1;
-              
-              log(`Reddit fetch blocked for r/${subreddit}: 403. Trying alternative proxy (${proxyLabel(activeProxyUrl)})...`);
-              
-              try {
-                lastResponse = await fetchTextViaProxy(target.url, activeProxyUrl, {
-                  headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Referer': 'https://www.reddit.com/',
-                    'DNT': '1'
-                  },
-                  timeout: 15000
-                });
-                
-                if (lastResponse.ok) {
-                  // Success with new proxy - process the response
-                  let parsedPosts = [];
-                  if (isJsonEndpoint) {
-                    try {
-                      const data = await lastResponse.json();
-                      parsedPosts = data.data?.children?.map(child => child.data) || [];
-                    } catch (e) {
-                      const html = await lastResponse.text();
-                      parsedPosts = parseRedditPostsFromHtml(html);
-                    }
-                  } else {
-                    const html = await lastResponse.text();
-                    parsedPosts = parseRedditPostsFromHtml(html);
-                  }
-                  
-                  const now = Date.now();
-                  for (const postData of parsedPosts) {
-                    addPost(postData, now, {
-                      subreddit,
-                      query: target.query,
-                      sort: target.sort,
-                    });
-                  }
-                  
-                  await delay(450);
-                  break; // Exit retry loop - success
-                }
-              } catch (error) {
-                log(`Error retrying with proxy during 403 handling for r/${subreddit}: ${error.message}`);
-                lastResponse = { ok: false, status: 999 }; // Treat errors as failed attempt
-              }
-              
-              await delay(900);
+          if (!response.ok) {
+            if (response.status === 429) {
+              log(`Reddit rate limited r/${subreddit}: 429. Stopping this research fetch pass.`);
+              return posts;
             }
-            
-            // If still 403 after trying proxies (or skipped proxies for HTML), attempt old.reddit fallback
-            if (!lastResponse.ok && lastResponse.status === 403) {
-              log(`Reddit fetch blocked for r/${subreddit}: 403. Trying old Reddit fallback...`);
-              let fallbackPosts = [];
-              try {
-                fallbackPosts = await fetchOldRedditFallback(target, subreddit);
-              } catch (error) {
-                if (error instanceof RedditRateLimitedError) {
-                  log(`${error.message}. Stopping this research fetch pass to cool down.`);
-                  return posts;
-                }
-
-                throw error;
-              }
-              const now = Date.now();
-              for (const post of fallbackPosts) {
-                addPost(post, now, {
-                  subreddit,
-                  query: post.source_query || target.query,
-                  sort: post.source_sort || target.sort,
-                });
-              }
-              await delay(900);
-            }
-            
+            log(`Fetch failed for r/${subreddit} (${target.sort}): ${response.status}`);
+            await delay(2000);
             continue;
           }
 
-          log(`Reddit fetch failed for r/${subreddit}: ${response.status}. Waiting before retry...`);
-          await delay(6000);
+          const html = await response.text();
+          const parsedPosts = parseRedditPostsFromHtml(html);
+          
+          if (parsedPosts.length === 0) {
+            log(`No posts found for r/${subreddit} (${target.sort})`);
+            await delay(1000);
+            continue;
+          }
+
+          const now = Date.now();
+          for (const postData of parsedPosts) {
+            addPost(postData, now, {
+              subreddit,
+              query: target.query,
+              sort: target.sort,
+            });
+          }
+
+          log(`Parsed ${parsedPosts.length} posts for r/${subreddit} (${target.sort})`);
+          await delay(800);
+        } catch (error) {
+          log(`Error fetching r/${subreddit} (${target.sort}): ${error.message}`);
+          await delay(2000);
           continue;
         }
-
-        const isJsonEndpoint = target.url.includes('.json');
-        const now = Date.now();
-        let parsedPosts = [];
-
-        if (isJsonEndpoint) {
-          // Parse JSON response
-          try {
-            const data = await response.json();
-            parsedPosts = data.data?.children?.map(child => child.data) || [];
-          } catch (e) {
-            // If JSON parsing fails, try HTML parsing
-            const html = await response.text();
-            parsedPosts = parseRedditPostsFromHtml(html);
-          }
-        } else {
-          // Parse HTML response
-          const html = await response.text();
-          parsedPosts = parseRedditPostsFromHtml(html);
-        }
-
-        for (const postData of parsedPosts) {
-          addPost(postData, now, {
-            subreddit,
-            query: target.query,
-            sort: target.sort,
-          });
-        }
-
-        await delay(450);
       }
 
       const added = posts.length - uniqueBefore;
-      log(`r/${subreddit}: ${added} unique recent post(s) added from ${targets.length} request(s)`);
+      log(`r/${subreddit}: ${added} unique recent post(s) added`);
 
       if (i < subreddits.length - 1) {
         await delay(1200);
       }
     } catch (error) {
-      if (error instanceof ProxyUnavailableError) {
-        throw error;
-      }
-
       if (error instanceof RedditRateLimitedError) {
         log(`${error.message}. Stopping this research fetch pass to cool down.`);
         return posts;
       }
 
       log(`Error fetching r/${subreddit}: ${error.message}`);
-      await delay(6000);
+      await delay(3000);
     }
   }
 
