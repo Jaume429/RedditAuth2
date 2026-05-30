@@ -452,15 +452,29 @@ function nextProxyUrl(currentProxyUrl) {
   return PROXY_URLS[nextIndex];
 }
 
-function fetchTextDirect(url, options = {}) {
+function fetchTextDirect(url, options = {}, redirectCount = 0) {
+  const MAX_REDIRECTS = 5;
+  
   return new Promise((resolve, reject) => {
     const request = httpsRequest(url, {
       method: "GET",
       headers: options.headers || {},
       timeout: options.timeout || 15000,
     }, (response) => {
+      // Handle redirects
+      if ((response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) && redirectCount < MAX_REDIRECTS) {
+        const redirectUrl = response.headers.location;
+        if (!redirectUrl) {
+          reject(new Error(`Redirect status ${response.statusCode} but no Location header`));
+          return;
+        }
+        
+        // Follow redirect
+        fetchTextDirect(redirectUrl, options, redirectCount + 1).then(resolve).catch(reject);
+        return;
+      }
+      
       const chunks = [];
-
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => {
         const body = Buffer.concat(chunks).toString("utf8");
@@ -481,7 +495,9 @@ function fetchTextDirect(url, options = {}) {
   });
 }
 
-function fetchTextViaProxy(url, proxyUrl, options = {}) {
+function fetchTextViaProxy(url, proxyUrl, options = {}, redirectCount = 0) {
+  const MAX_REDIRECTS = 5;
+  
   return new Promise((resolve, reject) => {
     const request = httpsRequest(url, {
       method: "GET",
@@ -489,8 +505,20 @@ function fetchTextViaProxy(url, proxyUrl, options = {}) {
       agent: new HttpsProxyAgent(proxyUrl),
       timeout: options.timeout || 15000,
     }, (response) => {
+      // Handle redirects
+      if ((response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) && redirectCount < MAX_REDIRECTS) {
+        const redirectUrl = response.headers.location;
+        if (!redirectUrl) {
+          reject(new Error(`Redirect status ${response.statusCode} but no Location header`));
+          return;
+        }
+        
+        // Follow redirect
+        fetchTextViaProxy(redirectUrl, proxyUrl, options, redirectCount + 1).then(resolve).catch(reject);
+        return;
+      }
+      
       const chunks = [];
-
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => {
         const body = Buffer.concat(chunks).toString("utf8");
