@@ -787,13 +787,7 @@ async function enrichOpportunity(opportunity) {
     throw new Error('Opportunity is missing postUrl or commentText.');
   }
 
-  let metadata;
-  try {
-    metadata = await fetchPostMetadata(postUrl);
-  } catch (error) {
-    metadata = metadataFromOpportunity(postUrl, opportunity);
-    log(`Using research metadata for ${postUrl} because Reddit metadata fetch failed: ${error.message}`);
-  }
+  const metadata = metadataFromOpportunity(postUrl, opportunity);
 
   return {
     postUrl,
@@ -885,24 +879,18 @@ async function processQueue() {
       continue;
     }
 
-    let metadata;
-    try {
-      metadata = await fetchPostMetadata(item.postUrl);
-    } catch (error) {
-      log(`Failed to refresh metadata for ${item.postUrl}: ${error.message}. Proceeding with existing queue details.`);
-      metadata = {
-        subreddit: item.subreddit,
-        createdAtMs: Date.now() - (12 * 60 * 60 * 1000), // Assume 12 hours old
-        title: item.title,
-        locked: false,
-        archived: false,
-        score: item.discovery?.score || 0,
-        comments: item.discovery?.comments || 0,
-        awards: 0,
-        views: null,
-        upvoteRatio: item.discovery?.upvoteRatio || null,
-      };
-    }
+    const metadata = {
+      subreddit: item.subreddit,
+      createdAtMs: Date.now() - (12 * 60 * 60 * 1000), // Assume 12 hours old
+      title: item.title,
+      locked: false,
+      archived: false,
+      score: item.discovery?.score || 0,
+      comments: item.discovery?.comments || 0,
+      awards: 0,
+      views: null,
+      upvoteRatio: item.discovery?.upvoteRatio || null,
+    };
 
     if (isOlderThan48Hours(metadata.createdAtMs)) {
       log(`Skipping ${item.postUrl} because it is older than 48 hours`);
