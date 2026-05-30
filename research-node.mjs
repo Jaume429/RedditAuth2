@@ -1023,7 +1023,6 @@ async function fetchRedditPostsWithBrowser(learning = {}, attempt = 1) {
   try {
     log(`Starting Playwright browser for Reddit scraping`);
     browser = await chromium.launch({ headless: true });
-    const context = await browser.createBrowserContext();
     
     for (let i = 0; i < subreddits.length; i++) {
       const subreddit = subreddits[i];
@@ -1068,7 +1067,7 @@ async function fetchRedditPostsWithBrowser(learning = {}, attempt = 1) {
 
         for (const target of targets) {
           try {
-            const page = await context.newPage();
+            const page = await browser.newPage();
             try {
               log(`Opening ${target.sort} for r/${subreddit}...`);
               
