@@ -5,7 +5,10 @@
     "nixpacksPlan": {
       "phases": {
         "setup": {
-          "nixPkgs": ["python3", "nodejs"]
+          "nixPkgs": [
+            "python3",
+            "nodejs"
+          ]
         }
       }
     }
@@ -18,6 +21,6 @@
     "cheerio": "^1.0.0-rc.12",
     "http-proxy-agent": "^7.0.0",
     "https-proxy-agent": "^7.0.0",
-    "playwright": "^1.49.0"
+    "playwright": "^1.60.0"
   }
 }

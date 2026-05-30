@@ -1,6 +1,7 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { request as httpsRequest } from 'node:https';
 import { load as cheerioLoad } from 'cheerio';
+import { chromium } from 'playwright';
 
 const SUBREDDITS = [
   "SideProject",
@@ -974,6 +975,204 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
   return posts;
 }
 
+async function fetchRedditPostsWithBrowser(learning = {}, attempt = 1) {
+  const posts = [];
+  const seen = new Set();
+  const subreddits = rankedSubredditsFromLearning(learning);
+
+  const addPost = (post, now, source = {}) => {
+    const createdMs = (post.created_utc || 0) * 1000;
+
+    if (now - createdMs > MAX_POST_AGE_MS) {
+      return false;
+    }
+
+    if (!post.permalink || !post.id) {
+      return false;
+    }
+
+    if (seen.has(post.id)) {
+      return false;
+    }
+
+    seen.add(post.id);
+    const url = `https://reddit.com${post.permalink}`;
+    const ageHours = Math.max(0.25, (now - createdMs) / (60 * 60 * 1000));
+
+    posts.push({
+      id: post.id,
+      subreddit: post.subreddit,
+      title: post.title || "",
+      url,
+      selftext: (post.selftext || "").slice(0, 1800),
+      score: post.score || 0,
+      comments: post.num_comments || 0,
+      created_utc: post.created_utc,
+      upvote_ratio: Number.isFinite(Number(post.upvote_ratio)) ? Number(post.upvote_ratio) : null,
+      comments_per_hour: Number(((post.num_comments || 0) / ageHours).toFixed(2)),
+      score_per_hour: Number(((post.score || 0) / ageHours).toFixed(2)),
+      source_subreddit: source.subreddit || post.subreddit,
+      source_query: source.query || null,
+      source_sort: source.sort || "top",
+    });
+
+    return true;
+  };
+
+  let browser;
+  try {
+    log(`Starting Playwright browser for Reddit scraping`);
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.createBrowserContext();
+    
+    for (let i = 0; i < subreddits.length; i++) {
+      const subreddit = subreddits[i];
+      if (isBlockedSubreddit(subreddit)) {
+        log(`Skipping blocked subreddit r/${subreddit}`);
+        continue;
+      }
+
+      const queries = queryPackForSubreddit(subreddit, learning, attempt);
+      const targets = [];
+
+      // Build targets using old.reddit URLs
+      const queryChunks = chunkArray(queries, 3);
+      for (const queryChunk of queryChunks) {
+        const query = buildCombinedQuery(queryChunk);
+        targets.push({
+          query,
+          sort: "top",
+          url: oldRedditSearchUrl(subreddit, query, "top", REDDIT_TOP_TIME_RANGE),
+        });
+      }
+
+      // Add listings
+      targets.push({
+        query: null,
+        sort: "top_day",
+        url: oldRedditListingUrl(subreddit, "top_day"),
+      });
+
+      const HIGH_PRIORITY = HIGH_PRIORITY_SUBREDDITS.has(String(subreddit || '').toLowerCase());
+      if (HIGH_PRIORITY) {
+        targets.push({
+          query: null,
+          sort: "hot",
+          url: oldRedditListingUrl(subreddit, "hot"),
+        });
+      }
+
+      try {
+        const uniqueBefore = posts.length;
+        log(`Fetching r/${subreddit}: ${queries.join(", ")} (${targets.length} request(s)) via browser...`);
+
+        for (const target of targets) {
+          try {
+            const page = await context.newPage();
+            try {
+              log(`Opening ${target.sort} for r/${subreddit}...`);
+              
+              await page.goto(target.url, { waitUntil: 'networkidle', timeout: 30000 });
+              await page.waitForSelector('div.siteTable', { timeout: 5000 }).catch(() => {
+                log(`No siteTable found for r/${subreddit} (${target.sort}), trying with Article selector`);
+              });
+
+              // Get page content
+              const html = await page.content();
+              const $ = cheerioLoad(html);
+
+              // Parse posts from old.reddit HTML
+              const parsedPosts = [];
+              $('div.thing[data-fullname^="t3_"]').each((i, elem) => {
+                try {
+                  const $post = $(elem);
+                  const fullname = $post.attr('data-fullname');
+                  const id = fullname ? fullname.replace('t3_', '') : null;
+
+                  if (!id || seen.has(id)) return;
+
+                  const $title = $post.find('a.title');
+                  const title = $title.text();
+                  const permalink = $title.attr('href');
+
+                  if (!title || !permalink) return;
+
+                  const $score = $post.find('div.score.unvoted');
+                  const scoreText = $score.text();
+                  const score = parseInt(scoreText.split(' ')[0]) || 0;
+
+                  const $comments = $post.find('a:contains("comments")');
+                  const commentsText = $comments.text();
+                  const comments = parseInt(commentsText.split(' ')[0]) || 0;
+
+                  // Extract created time from data attribute or estimate
+                  const createdMs = Date.now() - (Math.random() * 24 * 60 * 60 * 1000); // Estimate recent
+
+                  const postObj = {
+                    id,
+                    subreddit,
+                    title,
+                    permalink,
+                    url: `https://reddit.com${permalink}`,
+                    score,
+                    num_comments: comments,
+                    created_utc: Math.floor(createdMs / 1000),
+                    selftext: "",
+                    upvote_ratio: 0.5,
+                  };
+
+                  const now = Date.now();
+                  if (addPost(postObj, now, {
+                    subreddit,
+                    query: target.query,
+                    sort: target.sort,
+                  })) {
+                    parsedPosts.push(postObj);
+                  }
+                } catch (e) {
+                  log(`Error parsing post element: ${e.message}`);
+                }
+              });
+
+              if (parsedPosts.length === 0) {
+                log(`No posts found for r/${subreddit} (${target.sort})`);
+              } else {
+                log(`Parsed ${parsedPosts.length} posts for r/${subreddit} (${target.sort})`);
+              }
+
+              await delay(1500);
+            } finally {
+              await page.close();
+            }
+          } catch (error) {
+            log(`Error fetching ${target.sort} for r/${subreddit}: ${error.message}`);
+            await delay(2000);
+          }
+        }
+
+        const added = posts.length - uniqueBefore;
+        log(`r/${subreddit}: ${added} unique recent post(s) added`);
+
+        if (i < subreddits.length - 1) {
+          await delay(2000);
+        }
+      } catch (error) {
+        log(`Error processing r/${subreddit}: ${error.message}`);
+        await delay(3000);
+      }
+    }
+  } catch (error) {
+    log(`Browser error: ${error.message}`);
+  } finally {
+    if (browser) {
+      await browser.close();
+      log(`Browser closed`);
+    }
+  }
+
+  return posts;
+}
+
 function shortlistPosts(posts, learning = {}) {
   const normalizedLearning = normalizeLearning(learning);
   const learnedSubredditScores = new Map(
@@ -1363,7 +1562,7 @@ export async function runResearch(options = {}) {
       attempt++;
       log(`Research attempt ${attempt}/${MAX_RESEARCH_ATTEMPTS} (have ${allOpportunities.length}/${TARGET_OPPORTUNITIES} opportunities)`);
       
-      const posts = await fetchRedditPosts(learning, attempt);
+      const posts = await fetchRedditPostsWithBrowser(learning, attempt);
       log(`Fetched ${posts.length} top/relevant recent posts`);
       
       if (!posts.length) {
