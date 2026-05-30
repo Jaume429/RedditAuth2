@@ -873,6 +873,7 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
         query: null,
         sort: listing.label,
         url: listing.url,
+        isHtml: true,
       });
     }
     
