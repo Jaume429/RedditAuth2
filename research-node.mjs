@@ -452,6 +452,35 @@ function nextProxyUrl(currentProxyUrl) {
   return PROXY_URLS[nextIndex];
 }
 
+function fetchTextDirect(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest(url, {
+      method: "GET",
+      headers: options.headers || {},
+      timeout: options.timeout || 15000,
+    }, (response) => {
+      const chunks = [];
+
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        resolve({
+          ok: response.statusCode >= 200 && response.statusCode < 300,
+          status: response.statusCode,
+          text: async () => body,
+          json: async () => JSON.parse(body),
+        });
+      });
+    });
+
+    request.on("timeout", () => {
+      request.destroy(new Error(`Request timed out after ${options.timeout || 15000}ms`));
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
+
 function fetchTextViaProxy(url, proxyUrl, options = {}) {
   return new Promise((resolve, reject) => {
     const request = httpsRequest(url, {
@@ -824,16 +853,46 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       log(`Fetching r/${subreddit}: ${queries.join(", ")} (${targets.length} request(s))...`);
 
       for (const target of targets) {
-        const response = await fetchTextViaProxy(target.url, activeProxyUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': target.isHtml ? 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' : 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://www.reddit.com/',
-            'DNT': '1'
-          },
-          timeout: 15000
-        });
+        // For HTML scraping: try direct first (no proxy), then fallback to proxy
+        let response;
+        
+        if (target.isHtml) {
+          try {
+            response = await fetchTextDirect(target.url, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://www.reddit.com/',
+                'DNT': '1'
+              },
+              timeout: 15000
+            });
+          } catch (directError) {
+            log(`Direct fetch failed for r/${subreddit}, trying via proxy: ${directError.message}`);
+            response = await fetchTextViaProxy(target.url, activeProxyUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://www.reddit.com/',
+                'DNT': '1'
+              },
+              timeout: 15000
+            });
+          }
+        } else {
+          response = await fetchTextViaProxy(target.url, activeProxyUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'application/json',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Referer': 'https://www.reddit.com/',
+              'DNT': '1'
+            },
+            timeout: 15000
+          });
+        }
 
         if (!response.ok) {
           if (isProxyUnavailableStatus(response.status)) {
@@ -857,7 +916,7 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
               activeProxyUrl = nextProxyUrl(activeProxyUrl);
               proxy403Attempts += 1;
               
-              log(`Reddit JSON fetch blocked for r/${subreddit}: 403. Trying alternative proxy (${proxyLabel(activeProxyUrl)})...`);
+              log(`Reddit HTML fetch blocked for r/${subreddit}: 403. Trying alternative proxy (${proxyLabel(activeProxyUrl)})...`);
               
               try {
                 lastResponse = await fetchTextViaProxy(target.url, activeProxyUrl, {
