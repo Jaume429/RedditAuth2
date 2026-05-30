@@ -1376,11 +1376,8 @@ export async function runResearch(options = {}) {
 
     log("Starting research module");
     
-    const proxyOk = await verifyProxyIsWorking();
-    if (!proxyOk) {
-      log("Proxy verification failed. Skipping research until a proxy is available.");
-      return [];
-    }
+    // Proxy verification removed - HTML scraping works without proxy
+    // Proxy is now optional fallback only if HTML scraping fails
 
     while (allOpportunities.length < TARGET_OPPORTUNITIES && attempt < MAX_RESEARCH_ATTEMPTS) {
       attempt++;
