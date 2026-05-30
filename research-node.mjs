@@ -1,5 +1,6 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { request as httpsRequest } from 'node:https';
+import { load as cheerioLoad } from 'cheerio';
 
 const SUBREDDITS = [
   "SideProject",
@@ -404,6 +405,47 @@ function proxyLabel(proxyUrl) {
   return match?.[1] || "unknown";
 }
 
+function parseRedditPostsFromHtml(html) {
+  try {
+    const $ = cheerioLoad(html);
+    const posts = [];
+    
+    // Reddit HTML structure - shreddit-post is the post element
+    $('shreddit-post').each((_, el) => {
+      const $post = $(el);
+      const title = $post.attr('title') || '';
+      const postId = $post.attr('id') || '';
+      const upvotes = $post.attr('upvote-count') || '0';
+      const score = parseInt(upvotes) || 0;
+      const numComments = $post.attr('comment-count') || '0';
+      const permalink = $post.attr('permalink') || '';
+      const subreddit = $post.attr('subreddit') || '';
+      const author = $post.attr('author') || '';
+      const created = parseInt($post.attr('created-timestamp') || '0');
+      
+      if (title && postId) {
+        posts.push({
+          id: postId,
+          title,
+          permalink: permalink || `/r/${subreddit}/comments/${postId}`,
+          subreddit,
+          author,
+          score,
+          num_comments: parseInt(numComments) || 0,
+          created_utc: Math.floor(created / 1000),
+          selftext: '',
+          upvote_ratio: 0.5
+        });
+      }
+    });
+    
+    return posts;
+  } catch (error) {
+    log(`Error parsing HTML posts: ${error.message}`);
+    return [];
+  }
+}
+
 function nextProxyUrl(currentProxyUrl) {
   const currentIndex = PROXY_URLS.indexOf(currentProxyUrl);
   const nextIndex = (currentIndex + 1) % PROXY_URLS.length;
@@ -752,8 +794,9 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       targets.push({
         query,
         sort: "top",
-        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=35&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
+        url: `https://www.reddit.com/r/${subreddit}/search?q=${encodeURIComponent(query)}&sort=top&limit=35&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
         fallbackUrl: oldRedditSearchUrl(subreddit, query, "top", REDDIT_TOP_TIME_RANGE),
+        isHtml: true,
       });
     }
 
@@ -762,8 +805,9 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       targets.push({
         query,
         sort: "new",
-        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`,
+        url: `https://www.reddit.com/r/${subreddit}/search?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`,
         fallbackUrl: oldRedditSearchUrl(subreddit, query, "new", "day"),
+        isHtml: true,
       });
     }
 
@@ -782,7 +826,11 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       for (const target of targets) {
         const response = await fetchTextViaProxy(target.url, activeProxyUrl, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': target.isHtml ? 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' : 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.reddit.com/',
+            'DNT': '1'
           },
           timeout: 15000
         });
@@ -814,18 +862,34 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
               try {
                 lastResponse = await fetchTextViaProxy(target.url, activeProxyUrl, {
                   headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': target.isHtml ? 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' : 'application/json',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://www.reddit.com/',
+                    'DNT': '1'
                   },
                   timeout: 15000
                 });
                 
                 if (lastResponse.ok) {
                   // Success with new proxy - process the response
-                  const data = await lastResponse.json();
-                  const now = Date.now();
+                  let parsedPosts = [];
+                  if (target.isHtml) {
+                    const html = await lastResponse.text();
+                    parsedPosts = parseRedditPostsFromHtml(html);
+                  } else {
+                    try {
+                      const data = await lastResponse.json();
+                      parsedPosts = data.data?.children?.map(child => child.data) || [];
+                    } catch (e) {
+                      const html = await lastResponse.text();
+                      parsedPosts = parseRedditPostsFromHtml(html);
+                    }
+                  }
                   
-                  for (const child of data.data?.children || []) {
-                    addPost(child.data, now, {
+                  const now = Date.now();
+                  for (const postData of parsedPosts) {
+                    addPost(postData, now, {
                       subreddit,
                       query: target.query,
                       sort: target.sort,
@@ -876,11 +940,27 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
           continue;
         }
 
-        const data = await response.json();
         const now = Date.now();
+        let parsedPosts = [];
 
-        for (const child of data.data?.children || []) {
-          addPost(child.data, now, {
+        if (target.isHtml) {
+          // Parse HTML response
+          const html = await response.text();
+          parsedPosts = parseRedditPostsFromHtml(html);
+        } else {
+          // Parse JSON response (fallback)
+          try {
+            const data = await response.json();
+            parsedPosts = data.data?.children?.map(child => child.data) || [];
+          } catch (e) {
+            // If JSON parsing fails, try HTML parsing
+            const html = await response.text();
+            parsedPosts = parseRedditPostsFromHtml(html);
+          }
+        }
+
+        for (const postData of parsedPosts) {
+          addPost(postData, now, {
             subreddit,
             query: target.query,
             sort: target.sort,
