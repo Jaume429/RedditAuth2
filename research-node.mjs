@@ -1471,7 +1471,7 @@ export async function runResearch(options = {}) {
         continue;
       }
 
-      const shortlisted = shortlistPostsV2(posts, learning);
+      const shortlisted = shortlistPosts(posts, learning);
       log(`Shortlisted ${shortlisted.length} posts for analysis`);
 
       if (!shortlisted.length) {
