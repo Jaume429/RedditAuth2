@@ -160,16 +160,16 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
 ]`;
 
 const PROXY_URLS = [
-  'http://aaubcdkx-gb-1:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-ca-2:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-de-3:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-fr-4:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-au-5:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-nl-6:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-it-7:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-es-8:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-be-9:ecljgj60smyr@p.webshare.io:80',
-  'http://aaubcdkx-at-10:ecljgj60smyr@p.webshare.io:80',
+  'http://aaubcdkx:ecljgj60smyr@38.154.203.95:5863',
+  'http://aaubcdkx:ecljgj60smyr@198.105.121.200:6462',
+  'http://aaubcdkx:ecljgj60smyr@64.137.96.74:6641',
+  'http://aaubcdkx:ecljgj60smyr@209.127.138.10:5784',
+  'http://aaubcdkx:ecljgj60smyr@38.154.185.97:6370',
+  'http://aaubcdkx:ecljgj60smyr@84.247.60.125:6095',
+  'http://aaubcdkx:ecljgj60smyr@142.111.67.146:5611',
+  'http://aaubcdkx:ecljgj60smyr@191.96.254.138:6185',
+  'http://aaubcdkx:ecljgj60smyr@31.58.9.4:6077',
+  'http://aaubcdkx:ecljgj60smyr@64.137.10.153:5803',
 ];
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const MAX_POST_AGE_MS = 24 * 60 * 60 * 1000;
@@ -1531,7 +1531,7 @@ export async function runResearch(options = {}) {
         continue;
       }
 
-      const shortlisted = shortlistPostsV2(posts, learning);
+      const shortlisted = shortlistPosts(posts, learning);
       log(`Shortlisted ${shortlisted.length} posts for analysis`);
 
       if (!shortlisted.length) {
