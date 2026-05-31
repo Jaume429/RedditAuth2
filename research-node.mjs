@@ -607,17 +607,6 @@ function parseCommentCount(value = "") {
   return match ? Number(match[1]) : 0;
 }
 
-function parseSearchScore(value = "") {
-  const text = String(value).replace(/,/g, "").toLowerCase();
-  const match = text.match(/(-?[\d\.]+)\s*k?\s*points?/);
-  if (!match) return 0;
-  let val = Number(match[1]);
-  if (text.includes("k")) {
-    val = val * 1000;
-  }
-  return Math.round(val);
-}
-
 function parseOldRedditSearchPosts(html, subreddit, source = {}) {
   const posts = [];
   const chunks = String(html || "").split(/<div class=" search-result search-result-link/i).slice(1);
@@ -641,9 +630,6 @@ function parseOldRedditSearchPosts(html, subreddit, source = {}) {
     const bodyHtml = chunk.match(/<div class="search-result-body">\s*<div class="md">([\s\S]*?)<\/div>\s*<\/div>/i)?.[1] || "";
     const createdMs = Date.parse(datetime);
     const comments = parseCommentCount(textFromHtml(commentsText));
-    const scoreText = chunk.match(/class="search-score[^"]*"[^>]*>([\s\S]*?)<\/span>/i)?.[1] || "";
-    const parsedScore = parseSearchScore(textFromHtml(scoreText));
-    const score = Number.isFinite(parsedScore) && parsedScore > 0 ? parsedScore : Math.max(5, comments);
 
     posts.push({
       id,
@@ -653,7 +639,7 @@ function parseOldRedditSearchPosts(html, subreddit, source = {}) {
       permalink,
       url: `https://reddit.com${permalink}`,
       created_utc: Number.isFinite(createdMs) ? Math.floor(createdMs / 1000) : Math.floor(Date.now() / 1000),
-      score,
+      score: Math.max(5, comments),
       num_comments: comments,
       upvote_ratio: null,
       source_query: source.query || null,
@@ -792,33 +778,19 @@ async function verifyProxyAttempt(proxyUrl) {
 }
 
 async function verifyProxyIsWorking() {
-  let lastWorkingProxy = null;
-
   for (let attempt = 1; attempt <= MAX_PROXY_ATTEMPTS; attempt += 1) {
     const proxyUrl = PROXY_URLS[(attempt - 1) % PROXY_URLS.length];
     const verification = await verifyProxyAttempt(proxyUrl);
 
     if (verification.ok) {
-      lastWorkingProxy = verification.proxyUrl;
-
-      if (!isDatacenterIp(verification.ip)) {
-        activeProxyUrl = verification.proxyUrl;
-        log(`Residential proxy confirmed: ${verification.ip}`);
-        return true;
-      } else {
-        log(`Detected datacenter IP ${verification.ip}. Retrying with another proxy...`);
-      }
+      activeProxyUrl = verification.proxyUrl;
+      log(`Proxy verified: IP ${verification.ip} via ${proxyLabel(activeProxyUrl)}`);
+      return true;
     }
 
     if (attempt < MAX_PROXY_ATTEMPTS) {
       await delay(PROXY_RETRY_DELAY_MS);
     }
-  }
-
-  if (lastWorkingProxy) {
-    activeProxyUrl = lastWorkingProxy;
-    log(`Warning: no residential IP found after ${MAX_PROXY_ATTEMPTS} attempts. Proceeding with last working proxy.`);
-    return true;
   }
 
   log(`Warning: proxy verification failed after ${MAX_PROXY_ATTEMPTS} attempts.`);
@@ -880,14 +852,13 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
     const queryChunks = chunkArray(queries, 3);
     const isHighPriority = HIGH_PRIORITY_SUBREDDITS.has(String(subreddit || '').toLowerCase());
 
-    // Primary: Reddit JSON API endpoints (complete data: score, comments, upvote_ratio, selftext)
+    // Use old.reddit directly for all searches - no proxies needed
     for (const queryChunk of queryChunks) {
       const query = buildCombinedQuery(queryChunk);
       targets.push({
         query,
         sort: "top",
-        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=top&limit=35&t=${REDDIT_TOP_TIME_RANGE}&restrict_sr=1`,
-        fallbackUrl: oldRedditSearchUrl(subreddit, query, "top", REDDIT_TOP_TIME_RANGE),
+        url: oldRedditSearchUrl(subreddit, query, "top", REDDIT_TOP_TIME_RANGE),
       });
     }
 
@@ -896,17 +867,22 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       targets.push({
         query,
         sort: "new",
-        url: `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&sort=new&limit=25&t=day&restrict_sr=1`,
-        fallbackUrl: oldRedditSearchUrl(subreddit, query, "new", "day"),
+        url: oldRedditSearchUrl(subreddit, query, "new", "day"),
       });
     }
 
-    for (const listing of listingUrlsForSubreddit(subreddit)) {
+    // Use old.reddit directly for listings
+    targets.push({
+      query: null,
+      sort: "top_day",
+      url: oldRedditListingUrl(subreddit, "top_day"),
+    });
+
+    if (isHighPriority) {
       targets.push({
         query: null,
-        sort: listing.label,
-        url: listing.url,
-        fallbackUrl: listing.fallbackUrl,
+        sort: "hot",
+        url: oldRedditListingUrl(subreddit, "hot"),
       });
     }
 
@@ -916,95 +892,60 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
 
       for (const target of targets) {
         try {
-          // Primary: JSON API via proxy
-          log(`Fetching ${target.sort} for r/${subreddit} via JSON API...`);
+          log(`Fetching ${target.sort} for r/${subreddit} via proxy...`);
           const response = await fetchTextViaProxy(target.url, activeProxyUrl, {
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.5',
+              'Referer': 'https://old.reddit.com/',
             },
             timeout: 15000
           });
 
-          if (response.ok) {
-            try {
-              const data = await response.json();
-              const now = Date.now();
-              const children = data.data?.children || [];
-
-              for (const child of children) {
-                addPost(child.data, now, {
-                  subreddit,
-                  query: target.query,
-                  sort: target.sort,
-                });
-              }
-
-              log(`JSON API: ${children.length} posts from r/${subreddit} (${target.sort})`);
-              await delay(450);
+          if (!response.ok) {
+            if (response.status === 429) {
+              log(`Reddit rate limited r/${subreddit}: 429. Stopping this research fetch pass.`);
+              return posts;
+            }
+            if (isProxyUnavailableStatus(response.status)) {
+              activeProxyUrl = nextProxyUrl(activeProxyUrl);
+              log(`Proxy issue (${describeHttpStatus(response.status)}), switching to ${proxyLabel(activeProxyUrl)}`);
+              await delay(2000);
               continue;
-            } catch (parseError) {
-              log(`JSON parse failed for r/${subreddit} (${target.sort}): ${parseError.message}. Trying HTML fallback...`);
             }
-          } else if (response.status === 429) {
-            log(`Reddit rate limited r/${subreddit}: 429. Stopping this research fetch pass.`);
-            return posts;
-          } else if (isProxyUnavailableStatus(response.status)) {
-            activeProxyUrl = nextProxyUrl(activeProxyUrl);
-            log(`Proxy issue (${describeHttpStatus(response.status)}), switching to ${proxyLabel(activeProxyUrl)}`);
+            log(`Fetch failed for r/${subreddit} (${target.sort}): ${response.status}`);
             await delay(2000);
-            // Don't continue — try fallback below
-          } else {
-            log(`JSON API failed for r/${subreddit} (${target.sort}): ${response.status}. Trying HTML fallback...`);
+            continue;
           }
 
-          // Fallback: old.reddit HTML scraping
-          if (target.fallbackUrl) {
-            try {
-              const fallbackResponse = await fetchTextViaProxy(target.fallbackUrl, activeProxyUrl, {
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                  'Accept-Language': 'en-US,en;q=0.5',
-                  'Referer': 'https://old.reddit.com/',
-                },
-                timeout: 15000
-              });
+          const html = await response.text();
 
-              if (fallbackResponse.ok) {
-                const html = await fallbackResponse.text();
-
-                if (/You've been blocked by network security|Please wait for verification/i.test(html)) {
-                  log(`r/${subreddit} (${target.sort}) HTML fallback returned a Reddit block/verification page. Rotating proxy...`);
-                  activeProxyUrl = nextProxyUrl(activeProxyUrl);
-                  await delay(2000);
-                  continue;
-                }
-
-                const parsedPosts = parseOldRedditPosts(html, subreddit, target);
-                if (parsedPosts.length > 0) {
-                  const now = Date.now();
-                  for (const postData of parsedPosts) {
-                    addPost(postData, now, {
-                      subreddit,
-                      query: target.query,
-                      sort: target.sort,
-                    });
-                  }
-                  log(`HTML fallback: ${parsedPosts.length} posts from r/${subreddit} (${target.sort})`);
-                } else {
-                  log(`HTML fallback: no posts parsed for r/${subreddit} (${target.sort})`);
-                }
-              } else if (fallbackResponse.status === 429) {
-                log(`HTML fallback rate limited for r/${subreddit}: 429. Stopping.`);
-                return posts;
-              } else {
-                log(`HTML fallback failed for r/${subreddit} (${target.sort}): ${fallbackResponse.status}`);
-              }
-            } catch (fallbackError) {
-              log(`HTML fallback error for r/${subreddit} (${target.sort}): ${fallbackError.message}`);
-            }
+          if (/You've been blocked by network security|Please wait for verification/i.test(html)) {
+            log(`r/${subreddit} (${target.sort}) returned a Reddit block/verification page. Rotating proxy...`);
+            activeProxyUrl = nextProxyUrl(activeProxyUrl);
+            await delay(2000);
+            continue;
           }
 
+          const parsedPosts = parseOldRedditPosts(html, subreddit, target);
+
+          if (parsedPosts.length === 0) {
+            log(`No posts parsed for r/${subreddit} (${target.sort})`);
+            await delay(1000);
+            continue;
+          }
+
+          const now = Date.now();
+          for (const postData of parsedPosts) {
+            addPost(postData, now, {
+              subreddit,
+              query: target.query,
+              sort: target.sort,
+            });
+          }
+
+          log(`Parsed ${parsedPosts.length} posts for r/${subreddit} (${target.sort})`);
           await delay(800);
         } catch (error) {
           log(`Error fetching r/${subreddit} (${target.sort}): ${error.message}`);
@@ -1014,7 +955,7 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       }
 
       const added = posts.length - uniqueBefore;
-      log(`r/${subreddit}: ${added} unique recent post(s) added from ${targets.length} request(s)`);
+      log(`r/${subreddit}: ${added} unique recent post(s) added`);
 
       if (i < subreddits.length - 1) {
         await delay(1200);
@@ -1026,7 +967,7 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       }
 
       log(`Error fetching r/${subreddit}: ${error.message}`);
-      await delay(6000);
+      await delay(3000);
     }
   }
 
@@ -1273,17 +1214,15 @@ function shortlistPostsV2(posts, learning = {}) {
     /\bfundraising\b/i,
   ];
 
-  const MIN_COMMENTS = 18;
-  const MIN_UPVOTES = 12;
-  const STRONG_FIT_MIN_COMMENTS = 5;
-  const STRONG_FIT_MIN_UPVOTES = 5;
+  const MIN_COMMENTS = 40;
+  const MIN_UPVOTES = 15;
   const belowCommentThreshold = posts.filter((post) => post.comments < MIN_COMMENTS).length;
   const belowUpvoteThreshold = posts.filter((post) => post.score < MIN_UPVOTES).length;
   const maxComments = Math.max(0, ...posts.map((post) => post.comments || 0));
   const maxScore = Math.max(0, ...posts.map((post) => post.score || 0));
 
   log(
-    `Shortlist thresholds: hot=${MIN_COMMENTS}+ comments/${MIN_UPVOTES}+ upvotes or strong-fit=${STRONG_FIT_MIN_COMMENTS}+ comments/${STRONG_FIT_MIN_UPVOTES}+ upvotes; max seen ${maxComments} comments / ${maxScore} upvotes; below hot comments ${belowCommentThreshold}/${posts.length}, below hot upvotes ${belowUpvoteThreshold}/${posts.length}`
+    `Shortlist thresholds: need ${MIN_COMMENTS}+ comments and ${MIN_UPVOTES}+ upvotes; max seen ${maxComments} comments / ${maxScore} upvotes; below comments ${belowCommentThreshold}/${posts.length}, below upvotes ${belowUpvoteThreshold}/${posts.length}`
   );
 
   const scored = posts
@@ -1326,9 +1265,7 @@ function shortlistPostsV2(posts, learning = {}) {
       };
     })
     .filter((post) => {
-      const isHotEnough = post.comments >= MIN_COMMENTS && post.score >= MIN_UPVOTES;
-      const isStrongFit = post.fit_score >= 55 && post.comments >= STRONG_FIT_MIN_COMMENTS && post.score >= STRONG_FIT_MIN_UPVOTES;
-      return isHotEnough || isStrongFit;
+      return post.comments >= MIN_COMMENTS && post.score >= MIN_UPVOTES;
     })
     .sort((a, b) => b.local_score - a.local_score)
     .slice(0, 150);
@@ -1512,8 +1449,7 @@ export async function runResearch(options = {}) {
 
     const proxyOk = await verifyProxyIsWorking();
     if (!proxyOk) {
-      log("Proxy verification failed. Skipping research until a proxy is available.");
-      return [];
+      log('Warning: no working proxy found. Research may fail with 403 errors.');
     }
 
     while (allOpportunities.length < TARGET_OPPORTUNITIES && attempt < MAX_RESEARCH_ATTEMPTS) {
@@ -1531,7 +1467,7 @@ export async function runResearch(options = {}) {
         continue;
       }
 
-      const shortlisted = shortlistPosts(posts, learning);
+      const shortlisted = shortlistPostsV2(posts, learning);
       log(`Shortlisted ${shortlisted.length} posts for analysis`);
 
       if (!shortlisted.length) {
