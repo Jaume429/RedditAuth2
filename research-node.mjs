@@ -607,6 +607,17 @@ function parseCommentCount(value = "") {
   return match ? Number(match[1]) : 0;
 }
 
+function parseSearchScore(value = "") {
+  const text = String(value).replace(/,/g, "").toLowerCase();
+  const match = text.match(/(-?[\d\.]+)\s*k?\s*points?/);
+  if (!match) return 0;
+  let val = Number(match[1]);
+  if (text.includes("k")) {
+    val = val * 1000;
+  }
+  return Math.round(val);
+}
+
 function parseOldRedditSearchPosts(html, subreddit, source = {}) {
   const posts = [];
   const chunks = String(html || "").split(/<div class=" search-result search-result-link/i).slice(1);
@@ -630,6 +641,9 @@ function parseOldRedditSearchPosts(html, subreddit, source = {}) {
     const bodyHtml = chunk.match(/<div class="search-result-body">\s*<div class="md">([\s\S]*?)<\/div>\s*<\/div>/i)?.[1] || "";
     const createdMs = Date.parse(datetime);
     const comments = parseCommentCount(textFromHtml(commentsText));
+    const scoreText = chunk.match(/class="search-score[^"]*"[^>]*>([\s\S]*?)<\/span>/i)?.[1] || "";
+    const parsedScore = parseSearchScore(textFromHtml(scoreText));
+    const score = Number.isFinite(parsedScore) && parsedScore > 0 ? parsedScore : Math.max(5, comments);
 
     posts.push({
       id,
@@ -639,7 +653,7 @@ function parseOldRedditSearchPosts(html, subreddit, source = {}) {
       permalink,
       url: `https://reddit.com${permalink}`,
       created_utc: Number.isFinite(createdMs) ? Math.floor(createdMs / 1000) : Math.floor(Date.now() / 1000),
-      score: Math.max(5, comments),
+      score,
       num_comments: comments,
       upvote_ratio: null,
       source_query: source.query || null,
@@ -1471,7 +1485,7 @@ export async function runResearch(options = {}) {
         continue;
       }
 
-      const shortlisted = shortlistPosts(posts, learning);
+      const shortlisted = shortlistPostsV2(posts, learning);
       log(`Shortlisted ${shortlisted.length} posts for analysis`);
 
       if (!shortlisted.length) {
