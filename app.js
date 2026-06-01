@@ -27,6 +27,11 @@ const SEARCH_QUERIES = [
   "how to build",
   "no code",
   "Claude Code",
+  "Claude Code expensive",
+  "Claude Code context",
+  "token usage",
+  "debugging with Claude",
+  "Claude app vs Claude Code",
   "launch idea",
   "build without coding",
   "AI to build",
@@ -47,9 +52,9 @@ PRODUCT:
 - Ideal customer: entrepreneur, creator, freelancer, or professional with an idea who doesn't know how to execute it technically.
 
 MUST-HAVE CRITERIA (post must match ALL 3):
-1. Author is clearly non-technical AND has a specific idea/problem to solve (not just casual interest)
-2. Post shows real intent to BUILD or LAUNCH something (not just asking about AI in general)
-3. Post is asking for help, resources, or alternatives-not already solved or promotional
+1. Author is clearly non-technical, has no dev background, or is struggling to use Claude/AI coding tools effectively
+2. Post shows a real builder pain: context blowing up, token limits, Claude Code cost, debugging, Claude app vs Claude Code confusion, prompting/spec workflow, or shipping an MVP
+3. Post is asking for help, sharing a painful lesson, or inviting practical advice where a useful workflow comment fits naturally
 
 BONUS CRITERIA (prioritize posts matching these):
 - Explicitly mentions "no code", "without coding", or inability to code technically
@@ -59,6 +64,7 @@ BONUS CRITERIA (prioritize posts matching these):
 - The thread is early enough that a useful comment can still be seen
 - The post asks for a concrete workflow, debugging, prompting, shipping, validation, or first-product advice
 - Prefer r/ClaudeCode and r/vibecoding when the thread is specifically about Claude Code workflow, token/context limits, debugging, specs, or shipping with AI
+- Proven winning topics: Claude Code too expensive, context/token usage, Claude app vs Claude Code, debugging precisely, no dev background, how people get the most out of Claude
 
 DISQUALIFY IF:
 - Post is from a developer/technical builder (even if interested in AI tools)
@@ -70,7 +76,17 @@ DISQUALIFY IF:
 - OP is complaining about a tool not working or asking for specific no-code tool recommendations instead of asking how to build/launch
 - OP is comparing tools or asking "what's better: X or Y tool" - these are not our posts
 - The only possible reply would be a vague encouragement or a generic "I wrote this down" link drop
-- The post is mainly a showcase and does not ask for feedback, advice, users, or next steps
+- The post is mainly a showcase, meme, AI image, "my latest game", or hype post and does not ask for feedback, advice, users, or next steps
+
+PROVEN COMMENT STYLE:
+- Write like a real non-dev builder replying from experience, not like a marketer.
+- The best comments are short and follow exactly: one useful insight, one personal/context sentence if natural, casual link last.
+- Good openings: "what helped me was...", "same boat, no dev background...", "the real unlock was...", "for your use case...", "i use sonnet for..."
+- Good link closers: "happy to share what worked for me -> [more info here](${LANDING_PAGE})", "made a small guide on this: [claude guide](${LANDING_PAGE})", "put the workflow here: [more info](${LANDING_PAGE})"
+- Only use first person when it fits the post. Never invent a dramatic story or claim results beyond the product's real angle.
+- Target structure examples:
+  "what helped me was X. it fixed Y.\n\nhappy to share what worked for me -> [more info here](${LANDING_PAGE})"
+  "same boat, no dev background. biggest fix was X.\n\nmade a small guide on this: [claude guide](${LANDING_PAGE})"
 
 STRICT FILTERING:
 - If a post only PARTIALLY matches must-have criteria, DISCARD IT
@@ -86,7 +102,7 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
     "reddit_url": "https://reddit.com/r/...",
     "title": "exact post title",
     "reason": "1-2 sentences explaining why this post is an excellent fit (be specific about which criteria it matches)",
-    "reply": "Write a Reddit-native comment that would still be useful if the link were removed. Rules: (1) Answer the exact question/pain point in the post, not a nearby topic. (2) 1-2 short paragraphs, maximum 65 words total. (3) Start with the useful insight, not empathy filler. (4) Include one concrete tactic, example, or decision rule. (5) Use lowercase/casual style when it fits the subreddit, especially ClaudeCode/vibecoding. (6) No exclamation marks. (7) Do NOT use these phrases: 'I wrote this down', 'if helpful', 'if it helps', 'I put together', 'guide', 'check it out', 'here is what I learned', 'getting a product out fast'. (8) Do not claim personal experience unless it naturally matches the post. (9) Add the link only as a soft afterthought in the final sentence, using Reddit Markdown link text like '[more detail here](${LANDING_PAGE})' or '[this is the workflow](${LANDING_PAGE})'. Do not paste the raw URL. (10) Never make the link sentence longer than the useful advice.",
+    "reply": "Write a short Reddit-native comment. Rules: (1) Maximum 55 words total. (2) Use 1-2 short paragraphs. (3) Structure: one useful insight/tactic, then one personal/context sentence if natural, then a casual link. (4) Start with phrases like 'what helped me was', 'same boat', 'the real unlock was', or 'for your use case' when they fit. (5) No generic marketing phrases like 'structured workflow helps', 'step-by-step process', 'for non-coders', or 'shippable product'. (6) No exclamation marks. (7) Use Reddit Markdown for the link, e.g. '[more info here](${LANDING_PAGE})' or '[claude guide](${LANDING_PAGE})'. Do not paste raw URL. (8) It should sound like Jaumee sharing what worked, not a brand account.",
     "risk": "none | sensitive | saturated | other"
   }
 ]`;

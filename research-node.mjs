@@ -26,6 +26,12 @@ const SEARCH_QUERIES = [
   "I have an idea",
   "technical barrier",
   "build without coding",
+  "Claude Code expensive",
+  "Claude Code too expensive",
+  "Claude Code context",
+  "token usage",
+  "debugging with Claude",
+  "Claude app vs Claude Code",
   "execution problem",
   "product idea but",
   "no programming skills",
@@ -37,25 +43,32 @@ const SEARCH_QUERIES = [
 const SUBREDDIT_QUERY_PACKS = {
   claudecode: [
     "coding amateur",
-    "built with Claude",
+    "context",
+    "token usage",
+    "too expensive",
+    "debugging",
     "Claude Code app",
+    "non dev",
     "first project",
-    "I built",
     "MVP",
   ],
   claudeai: [
-    "built with Claude",
+    "Claude Code",
     "Claude app",
+    "Claude app vs Claude Code",
     "workflow",
+    "context",
     "non technical",
-    "I built",
+    "debugging",
   ],
   vibecoding: [
     "vibe coding",
-    "built an app",
+    "debugging",
+    "no dev background",
     "first app",
     "product idea",
     "can't code",
+    "20$ plan",
   ],
   sideproject: [
     "MVP",
@@ -119,27 +132,39 @@ PRODUCT:
 - Description: A practical guide for non-developers and entrepreneurs who want to build and launch a digital product using Claude Code and AI, without knowing how to code.
 - Ideal customer: entrepreneur, creator, freelancer, or professional with an idea who doesn't know how to execute it technically.
 
-MUST-HAVE CRITERIA (post must match AT LEAST 2 of 3):
-1. Author explicitly says they can't code, don't know how to code, or is non-technical - OR they're an entrepreneur/maker with a real idea and execution barrier
-2. Post shows CONCRETE INTENT to BUILD or LAUNCH a real product/project (not theoretical, not tool shopping)
-3. Post is asking for HELP/ADVICE with how to overcome technical barrier or execute their idea
+MUST-HAVE CRITERIA (post must match AT LEAST 2 of 3, and the reply must answer a real pain):
+1. Author explicitly says they can't code, don't know how to code, is non-technical, or is struggling to use Claude/AI coding tools effectively
+2. Post shows a concrete builder pain: context blowing up, token limits, Claude Code cost, debugging, Claude app vs Claude Code confusion, prompting/spec workflow, or shipping an MVP
+3. Post is asking for help/advice, sharing a painful lesson, or inviting practical discussion where a useful workflow comment fits naturally
 
 BONUS CRITERIA (prioritize posts matching these):
 - Author explicitly says "I don't know how to code" or "I can't code"
-- Author is entrepreneur, maker, founder, or freelancer
+- Author is entrepreneur, maker, founder, freelancer, or "no dev background"
 - They describe a specific product/business idea they want to build
-- Frustrated tone about technical skills being the blocker
-- Asking "how do I..." or "is there a way to..." build without coding
+- Frustrated tone about technical skills, context, debugging, or cost being the blocker
+- Asking "how do I...", "what am I doing wrong", "Claude Code is too expensive", "how are people using Claude", or "Claude app vs Claude Code"
+- Thread is in r/ClaudeCode, r/ClaudeAI, or r/vibecoding and the topic is workflow/cost/context/debugging/shipping
 
 DISQUALIFY IF:
 - Author explicitly identifies as a developer, software engineer, or has professional coding experience
-- Post is ONLY asking for tool comparisons ("Claude vs Cursor vs ChatGPT")
+- Post is ONLY asking broad tool comparisons ("Claude vs Cursor vs ChatGPT") with no personal use case
 - Post is casual tech discussion with no personal project (just debating AI)
 - Post is low-effort, no clear question
 - Post is older than 24 hours
 - Already has 10+ highly-upvoted expert answers
 - Problem is 100% non-technical (pure marketing/sales/fundraising/time management)
 - Post is asking to learn programming as a skill (we're for building, not learning)
+- Post is mainly a showcase, meme, AI image, "look what I made", "my latest game", or hype post unless OP asks for help, feedback, users, next steps, or discusses a concrete build problem
+
+PROVEN COMMENT STYLE:
+- Write like a real non-dev builder replying from experience, not like a marketer.
+- The best comments are short and follow exactly: one useful insight, one personal/context sentence if natural, casual link last.
+- Good openings: "what helped me was...", "same boat, no dev background...", "the real unlock was...", "for your use case...", "i use sonnet for..."
+- Good link closers: "happy to share what worked for me -> [more info here](${LANDING_PAGE})", "made a small guide on this: [claude guide](${LANDING_PAGE})", "put the workflow here: [more info](${LANDING_PAGE})"
+- Only use first person when it fits the post. Never invent a dramatic story or claim results beyond the product's real angle.
+- Target structure examples:
+  "what helped me was X. it fixed Y.\n\nhappy to share what worked for me -> [more info here](${LANDING_PAGE})"
+  "same boat, no dev background. biggest fix was X.\n\nmade a small guide on this: [claude guide](${LANDING_PAGE})"
 
 STRICT FILTERING:
 - If a post doesn't clearly match at least 2 of 3 must-haves, DISCARD IT
@@ -154,7 +179,7 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
     "reddit_url": "https://reddit.com/r/...",
     "title": "exact post title",
     "reason": "1-2 sentences explaining why this post is an excellent fit (be specific about which criteria it matches)",
-    "reply": "Write a Reddit-native comment that would still be useful if the link were removed. Rules: (1) Answer the exact question/pain point in the post. (2) 1-2 short paragraphs, maximum 65 words total. (3) Start with the useful insight, not empathy filler. (4) Include one concrete tactic, example, or decision rule. (5) Use lowercase/casual style. (6) No exclamation marks. (7) Do NOT use these phrases: 'I wrote this down', 'if helpful', 'if it helps', 'I put together', 'guide', 'check it out', 'here is what I learned'. (8) Do not claim personal experience unless it naturally matches the post. (9) Add the link only as a soft afterthought in the final sentence using Reddit Markdown '[more here](${LANDING_PAGE})' or '[this is the workflow](${LANDING_PAGE})'. Do not paste raw URL. (10) Never make the link sentence longer than the useful advice.",
+    "reply": "Write a short Reddit-native comment. Rules: (1) Maximum 55 words total. (2) Use 1-2 short paragraphs. (3) Structure: one useful insight/tactic, then one personal/context sentence if natural, then a casual link. (4) Start with phrases like 'what helped me was', 'same boat', 'the real unlock was', or 'for your use case' when they fit. (5) No generic marketing phrases like 'structured workflow helps', 'step-by-step process', 'for non-coders', or 'shippable product'. (6) No exclamation marks. (7) Use Reddit Markdown for the link, e.g. '[more info here](${LANDING_PAGE})' or '[claude guide](${LANDING_PAGE})'. Do not paste raw URL. (8) It should sound like Jaumee sharing what worked, not a brand account.",
     "risk": "none | sensitive | saturated | other"
   }
 ]`;
@@ -1182,6 +1207,10 @@ function shortlistPostsV2(posts, learning = {}) {
     "ai to build",
     "claude",
     "claude code",
+    "context",
+    "token",
+    "too expensive",
+    "expensive",
     "technical cofounder",
     "debugging",
     "prompting",
@@ -1201,6 +1230,12 @@ function shortlistPostsV2(posts, learning = {}) {
     /\bfirst (app|project|product)\b/i,
     /\bbuilt with claude\b/i,
     /\bclaude code\b/i,
+    /\b(context|token)s?\b.{0,35}\b(blow|limit|usage|window|long|full|expensive)\b/i,
+    /\bclaude code\b.{0,40}\b(expensive|cost|limit|plan|20\$|\$20)\b/i,
+    /\b(debug|bug|error|not working)\b.{0,45}\b(claude|ai|cursor|code)\b/i,
+    /\bclaude (app|desktop)\b.{0,25}\b(claude code|code)\b/i,
+    /\b(no dev background|not a developer|non[-\s]?dev)\b/i,
+    /\bworkflow\b.{0,40}\b(claude|build|ship|debug|context)\b/i,
     /\bship(ped|ping)?\b/i,
   ];
   const negativePatterns = [
@@ -1208,6 +1243,8 @@ function shortlistPostsV2(posts, learning = {}) {
     /\bwhat'?s better\b/i,
     /\bshow me your\b/i,
     /\broast my\b/i,
+    /\b(my latest|look what i made|showcase|demo video|ai image|asked chatgpt for|chatgpt made)\b/i,
+    /\b(agi|singularity|replacing developers|ai will replace)\b/i,
     /\blearn (python|javascript|programming|to code)\b/i,
     /\bai replacing developers\b/i,
     /\bmarketing advice\b/i,
@@ -1237,7 +1274,7 @@ function shortlistPostsV2(posts, learning = {}) {
         0
       );
       const negativeScore = negativePatterns.reduce(
-        (score, pattern) => score + (pattern.test(text) ? 18 : 0),
+        (score, pattern) => score + (pattern.test(text) ? 24 : 0),
         0
       );
       const hotnessScore = Math.min(post.comments || 0, 180) * 0.85 + Math.min(post.score || 0, 800) * 0.32;
@@ -1252,7 +1289,8 @@ function shortlistPostsV2(posts, learning = {}) {
         (score, term) => score + (text.includes(term) ? 6 : 0),
         0
       );
-      const showcasePenalty = /\b(showcase|look what i made)\b/i.test(text) && !/\b(coding amateur|non[-\s]?technical|first app|built with claude)\b/i.test(text) ? 16 : 0;
+      const asksForNextStep = /\b(feedback|advice|help|how do i|what should i|next step|users|launch|ship|debug|stuck|not working)\b/i.test(text);
+      const showcasePenalty = /\b(showcase|look what i made|my latest|built this game|demo)\b/i.test(text) && !asksForNextStep ? 60 : 0;
       const saturationPenalty = (post.comments || 0) > 220 ? 18 : 0;
       const fitScore = keywordScore + goldenScore + subredditScore + learnedSubredditScore + learnedTermScore - negativeScore - showcasePenalty;
 
@@ -1265,7 +1303,7 @@ function shortlistPostsV2(posts, learning = {}) {
       };
     })
     .filter((post) => {
-      return post.comments >= MIN_COMMENTS && post.score >= MIN_UPVOTES;
+      return post.comments >= MIN_COMMENTS && post.score >= MIN_UPVOTES && post.fit_score >= 18;
     })
     .sort((a, b) => b.local_score - a.local_score)
     .slice(0, 150);
