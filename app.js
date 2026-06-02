@@ -5,6 +5,7 @@ const SCAN_COUNT_STORAGE = "redditauth.scanCount";
 const AUTOPOST_STORAGE = "redditauth.autopost";
 const FETCH_TIMEOUT_MS = 15000;
 const DASHBOARD_REFRESH_MS = 30000;
+const AUTOPOST_HOUR_LOCAL = 16;
 
 const SUBREDDITS = [
   "SideProject",
@@ -633,21 +634,11 @@ function handleAutopostToggle() {
 
 function getNextAutopostTime(from = new Date()) {
   const next = new Date(from);
-  next.setSeconds(0, 0);
-
-  if (next.getHours() >= 11) {
-    next.setDate(next.getDate() + 1);
-    next.setHours(9, 0, 0, 0);
-  } else if (next.getHours() < 9) {
-    next.setHours(9, 0, 0, 0);
-  }
-
-  next.setMinutes(next.getMinutes() + Math.floor(Math.random() * 121));
+  next.setHours(AUTOPOST_HOUR_LOCAL, 0, 0, 0);
 
   if (next <= from) {
     next.setDate(next.getDate() + 1);
-    next.setHours(9, 0, 0, 0);
-    next.setMinutes(next.getMinutes() + Math.floor(Math.random() * 121));
+    next.setHours(AUTOPOST_HOUR_LOCAL, 0, 0, 0);
   }
 
   return next;
