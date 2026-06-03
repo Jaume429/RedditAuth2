@@ -973,7 +973,8 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
           log(`Parsed ${parsedPosts.length} posts for r/${subreddit} (${target.sort})`);
           await delay(800);
         } catch (error) {
-          log(`Error fetching r/${subreddit} (${target.sort}): ${error.message}`);
+          log(`Error fetching r/${subreddit} (${target.sort}): ${error.message}. Rotating proxy...`);
+          activeProxyUrl = nextProxyUrl(activeProxyUrl);
           await delay(2000);
           continue;
         }

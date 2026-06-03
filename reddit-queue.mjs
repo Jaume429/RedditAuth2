@@ -429,7 +429,9 @@ async function fetchPostMetadata(postUrl) {
       const response = await fetchTextViaProxy(appendJsonSuffix(postUrl), proxyUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          accept: 'application/json',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Referer': 'https://old.reddit.com/',
         },
         timeout: 10000,
       });
@@ -456,11 +458,9 @@ async function fetchPostMetadata(postUrl) {
         };
       }
 
-      log(`Proxy ${proxyUrl} returned status ${response.status} for metadata of ${postUrl}. Rotating...`);
       proxyIndex++;
       lastError = new Error(`Could not fetch post metadata (${describeHttpStatus(response.status)})`);
     } catch (err) {
-      log(`Proxy ${proxyUrl} failed to fetch metadata: ${err.message}. Rotating...`);
       proxyIndex++;
       lastError = err;
     }
