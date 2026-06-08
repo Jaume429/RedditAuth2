@@ -122,7 +122,7 @@ const SUBREDDIT_QUERY_BUDGETS = {
 
 const HIGH_PRIORITY_SUBREDDITS = new Set(["claudecode", "claudeai", "vibecoding", "sideproject"]);
 
-const LANDING_PAGE = "https://buildwithclaude.vercel.app";
+const LANDING_PAGE = "https://veltrostudioo.gumroad.com/l/dicmd";
 
 const SYSTEM_PROMPT = `You are a Reddit-native operator finding ONLY the most relevant reply opportunities for a specific digital product. Your job is strict filtering and writing useful comments that sound like they belong in the thread.
 
