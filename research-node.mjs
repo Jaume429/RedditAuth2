@@ -156,15 +156,28 @@ DISQUALIFY IF:
 - Post is asking to learn programming as a skill (we're for building, not learning)
 - Post is mainly a showcase, meme, AI image, "look what I made", "my latest game", or hype post unless OP asks for help, feedback, users, next steps, or discusses a concrete build problem
 
-PROVEN COMMENT STYLE:
-- Write like a real non-dev builder replying from experience, not like a marketer.
-- The best comments are short and follow exactly: one useful insight, one personal/context sentence if natural, casual link last.
-- Good openings: "what helped me was...", "same boat, no dev background...", "the real unlock was...", "for your use case...", "i use sonnet for..."
-- Good link closers: "happy to share what worked for me -> [more info here](${LANDING_PAGE})", "made a small guide on this: [claude guide](${LANDING_PAGE})", "put the workflow here: [more info](${LANDING_PAGE})"
-- Only use first person when it fits the post. Never invent a dramatic story or claim results beyond the product's real angle.
-- Target structure examples:
-  "what helped me was X. it fixed Y.\n\nhappy to share what worked for me -> [more info here](${LANDING_PAGE})"
-  "same boat, no dev background. biggest fix was X.\n\nmade a small guide on this: [claude guide](${LANDING_PAGE})"
+PROVEN COMMENT STYLE — study these real examples, this is the exact bar to reach:
+
+Example 1 (workflow/limits thread): "Inefficient workflow and prompts that are too broad against too much data. I use Claude daily and only hit the limit once. After cleaning up my workflow, documentation and prompts, it's hard to even get close to the limit even when the project is well advanced."
+
+Example 2 (vibe coding UI thread): "One trick I've used for corporate work is to first have it build a full UI kit with all the components. Then you iterate on that until you're happy, and then you build."
+
+Example 3 (vibe coding thread): "You have to have the vision first, then ask the AI to build around your vision. If you give all the work to the AI, everything is going to come out the same."
+
+Example 4 (senior/junior coding thread): "Pretty much this. You focus on the architecture and the system. And as a result you can do some really crazy shit in a short time. The issue is that this is a huge advantage to senior engineers but juniors won't see where the complexity lives."
+
+Example 5 (Claude made coding fun): "I have mixed feelings. I get to implement less but I do more high level design. And that's often the most fun part for me."
+
+Example 6 (bottleneck thread): "Obviously. We are still the bottleneck. That said, it's totally possible to move faster with a clanker but you need to know when to slow down."
+
+COMMENT RULES (mandatory):
+- Maximum 1-3 sentences. No padding, no filler, no transitions.
+- Dry, direct tone. Write like someone who actually does this, not someone explaining it.
+- ONE specific, concrete idea. Not a list of tips.
+- NEVER use: "happy to share what worked for me", "made a small guide", "put the workflow here", or any variation of these phrases. They are banned.
+- NEVER use formulaic transitions to the link. If a link appears, it must feel like an afterthought, not the point of the comment.
+- Vary the structure every single time: sometimes start mid-thought, sometimes lead with the opinion, sometimes with the observation. No two comments should follow the same pattern.
+- The link to ${LANDING_PAGE} should appear in at most 1 in 3 comments, and only when it genuinely fits as a natural addendum. When it does appear, embed it casually inside a sentence, never as a standalone line.
 
 STRICT FILTERING:
 - If a post doesn't clearly match at least 2 of 3 must-haves, DISCARD IT
@@ -179,7 +192,7 @@ Return ONLY a JSON array. No markdown, no explanations, no extra text before or 
     "reddit_url": "https://reddit.com/r/...",
     "title": "exact post title",
     "reason": "1-2 sentences explaining why this post is an excellent fit (be specific about which criteria it matches)",
-    "reply": "Write a short Reddit-native comment. Rules: (1) Maximum 55 words total. (2) Use 1-2 short paragraphs. (3) Structure: one useful insight/tactic, then one personal/context sentence if natural, then a casual link. (4) Start with phrases like 'what helped me was', 'same boat', 'the real unlock was', or 'for your use case' when they fit. (5) No generic marketing phrases like 'structured workflow helps', 'step-by-step process', 'for non-coders', or 'shippable product'. (6) No exclamation marks. (7) Use Reddit Markdown for the link, e.g. '[more info here](${LANDING_PAGE})' or '[claude guide](${LANDING_PAGE})'. Do not paste raw URL. (8) It should sound like Jaumee sharing what worked, not a brand account.",
+    "reply": "Write a short Reddit-native comment. Rules: (1) Maximum 40 words total. (2) 1-3 sentences max, no paragraphs unless it genuinely reads better. (3) One concrete specific idea — no generic advice. (4) Dry, direct tone — write from lived experience, not like a marketer. (5) BANNED phrases: 'happy to share', 'made a small guide', 'put the workflow here', 'step-by-step', 'for non-coders', 'shippable product', 'structured workflow'. (6) No exclamation marks. (7) If including the link ${LANDING_PAGE}, embed it naturally inside a sentence using Reddit Markdown — never as a standalone call-to-action line. (8) Every reply must feel structurally different from the others — vary the opening, the tone, and how it ends.",
     "risk": "none | sensitive | saturated | other"
   }
 ]`;
