@@ -439,6 +439,15 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function withHardTimeout(promise, ms, label = 'operation') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Hard timeout after ${ms}ms: ${label}`)), ms)
+    ),
+  ]);
+}
+
 function proxyLabel(proxyUrl) {
   const match = proxyUrl.match(/\/\/([^:]+):/);
   return match?.[1] || "unknown";
@@ -931,15 +940,19 @@ async function fetchRedditPosts(learning = {}, attempt = 1) {
       for (const target of targets) {
         try {
           log(`Fetching ${target.sort} for r/${subreddit} via proxy...`);
-          const response = await fetchTextViaProxy(target.url, activeProxyUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.5',
-              'Referer': 'https://old.reddit.com/',
-            },
-            timeout: 15000
-          });
+          const response = await withHardTimeout(
+            fetchTextViaProxy(target.url, activeProxyUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer': 'https://old.reddit.com/',
+              },
+              timeout: 15000
+            }),
+            20000,
+            `r/${subreddit} ${target.sort}`
+          );
 
           if (!response.ok) {
             if (response.status === 429) {
